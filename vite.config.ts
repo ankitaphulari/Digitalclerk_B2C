@@ -4,7 +4,7 @@ import path from "path";
 import { componentTagger } from "lovable-tagger";
 
 export default defineConfig(({ mode }) => ({
-  base: mode === "production" ? "/form-bharat-buddy/" : "/", // for GitHub Pages
+  base: mode === "production" ? "/" : "/", // for GitHub Pages
   server: {
     host: true,
     port: 8080,
