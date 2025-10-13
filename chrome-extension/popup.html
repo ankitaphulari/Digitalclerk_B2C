@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DigitalClerk</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 380px;
+            min-height: 600px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #ffffff;
+            color: #1e293b;
+            position: relative;
+        }
+
+        .header {
+            background: #ffffff;
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 5px;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: #3b82f6;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+        }
+
+        .brand-name {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .tagline {
+            font-size: 11px;
+            opacity: 0.6;
+            font-weight: 400;
+            color: #64748b;
+        }
+
+        .content {
+            padding: 20px;
+        }
+
+        .section {
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 18px;
+            margin-bottom: 16px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .section h3 {
+            margin: 0 0 16px 0;
+            font-size: 15px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #1e293b;
+        }
+
+        .upload-area {
+            border: 2px dashed #cbd5e1;
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 16px;
+            background: #ffffff;
+        }
+
+        .upload-area:hover {
+            border-color: #3b82f6;
+            background: #f0f9ff;
+            transform: translateY(-2px);
+        }
+
+        .upload-area.dragover {
+            border-color: #3b82f6;
+            background: #eff6ff;
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.2);
+        }
+
+        .upload-icon {
+            font-size: 28px;
+            margin-bottom: 10px;
+            opacity: 0.8;
+        }
+
+        .upload-text {
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 6px;
+        }
+
+        .upload-subtext {
+            font-size: 11px;
+            opacity: 0.7;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .document-list {
+            max-height: 120px;
+            overflow-y: auto;
+            margin-bottom: 12px;
+        }
+
+        .document-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            background: #ffffff;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .document-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .document-name {
+            font-weight: 500;
+            font-size: 12px;
+        }
+
+        .document-meta {
+            opacity: 0.7;
+            font-size: 10px;
+        }
+
+        .document-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+            width: 100%;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f1f5f9;
+            color: #475569;
+            width: 100%;
+            border: 1px solid #e2e8f0;
+        }
+
+        .btn-secondary:hover {
+            background: #e2e8f0;
+        }
+
+        .btn-secondary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-small {
+            padding: 6px 10px;
+            font-size: 10px;
+        }
+
+        .btn-delete {
+            background: linear-gradient(45deg, #f44336, #d32f2f);
+            color: white;
+        }
+
+        .btn-extract {
+            background: linear-gradient(45deg, #2196F3, #1976D2);
+            color: white;
+        }
+
+        .status-indicator {
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            margin-bottom: 16px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .status-success {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid rgba(76, 175, 80, 0.4);
+            color: #4CAF50;
+        }
+
+        .status-warning {
+            background: rgba(255, 193, 7, 0.2);
+            border: 1px solid rgba(255, 193, 7, 0.4);
+            color: #FFC107;
+        }
+
+        .status-error {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid rgba(244, 67, 54, 0.4);
+            color: #f44336;
+        }
+
+        .settings {
+            margin-top: 12px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 10px;
+            transform: scale(1.1);
+        }
+
+        .footer {
+            padding: 16px 20px;
+            text-align: center;
+            font-size: 10px;
+            opacity: 0.7;
+            border-top: 1px solid #e2e8f0;
+            background: #f8fafc;
+            color: #64748b;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #e2e8f0;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #3b82f6;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .message {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 12px;
+            animation: slideIn 0.3s ease;
+            font-weight: 500;
+        }
+
+        .message.info {
+            background: rgba(33, 150, 243, 0.2);
+            border: 1px solid rgba(33, 150, 243, 0.4);
+            color: #2196F3;
+        }
+
+        .message.success {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid rgba(76, 175, 80, 0.4);
+            color: #4CAF50;
+        }
+
+        .message.warning {
+            background: rgba(255, 193, 7, 0.2);
+            border: 1px solid rgba(255, 193, 7, 0.4);
+            color: #FFC107;
+        }
+
+        .message.error {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid rgba(244, 67, 54, 0.4);
+            color: #f44336;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .empty-state {
+            text-align: center;
+            opacity: 0.6;
+            font-size: 12px;
+            padding: 16px;
+            font-style: italic;
+        }
+
+        .scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .scrollbar::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+        }
+
+        .scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+        }
+
+        .scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .quick-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .no-document-state {
+            text-align: center;
+            opacity: 0.7;
+            font-size: 11px;
+            padding: 8px;
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid rgba(255, 193, 7, 0.2);
+            border-radius: 6px;
+            color: #FFC107;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">
+            <div class="logo-icon">DC</div>
+            <div>
+                <div class="brand-name">DigitalClerk</div>
+                <div class="tagline">Your Digital Document Assistant</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="content">
+        <!-- Document Upload Section -->
+        <div class="section">
+            <h3>📄 Document Upload</h3>
+            
+            <div id="formatInfo" class="message info" style="margin-bottom: 12px;">
+                <strong>Format Requirements:</strong><br>
+                • JPG/PNG for images (max 10MB)<br>
+                • Auto-conversion available in web app<br>
+                • Passport photos: white background required
+            </div>
+            
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📁</div>
+                <div class="upload-text">Drop files here or click to upload</div>
+                <div class="upload-subtext">PDF, DOC, DOCX, TXT, PNG, JPG supported</div>
+                <div class="progress-bar" id="uploadProgress" style="display: none;">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+            
+            <div id="formatValidation" style="display: none;"></div>
+
+            <input type="file" id="fileInput" multiple accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
+
+            <div class="document-list scrollbar" id="documentList">
+                <div class="empty-state" id="emptyState">
+                    📋 No documents uploaded yet
+                </div>
+            </div>
+
+            <button class="btn btn-secondary" id="clearAllDocs">
+                🗑️ Clear All Documents
+            </button>
+        </div>
+
+        <!-- Status Section -->
+        <div id="statusSection" class="no-document-state" style="margin-bottom: 16px;">
+            No document loaded
+        </div>
+
+        <!-- Form Filling Section -->
+        <div class="section">
+            <h3>🔍 Form Filling</h3>
+            
+            <div id="statusIndicator"></div>
+
+            <button class="btn btn-primary" id="scanFormsBtn">
+                🔍 Scan for Forms
+            </button>
+
+            <button class="btn btn-secondary" id="fillFormsBtn" disabled>
+                ✏️ Fill Forms
+            </button>
+
+            <div class="settings">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="autoFillEnabled" checked>
+                    <label for="autoFillEnabled">Auto-fill forms when detected</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="highlightFields" checked>
+                    <label for="highlightFields">Highlight filled fields</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="section">
+            <h3>⚡ Quick Actions</h3>
+            
+            <div class="quick-actions">
+                <button class="btn btn-secondary" id="clearDataBtn">
+                    🗑️ Clear Data
+                </button>
+
+                <button class="btn btn-secondary" id="openWebAppBtn">
+                    🌐 Open Web App
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <div>v1.0.0 - DigitalClerk Extension</div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "DigitalClerk - Smart Form Filler",
+  "version": "1.0.0",
+  "description": "Auto-fill forms using data extracted from uploaded documents",
+  
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs",
+    "alarms",
+    "webNavigation"
+  ],
+  
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  
+  "externally_connectable": {
+    "matches": [
+      "https://localhost:*/*",
+      "https://127.0.0.1:*/*",
+      "https://*.lovable.app/*",
+      "https://*.digitalclerk.app/*",
+      "http://localhost:*/*"
+    ]
+  },
+  
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "DigitalClerk - Smart Form Filler"
+  },
+  
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  
+  "web_accessible_resources": [
+    {
+      "resources": ["popup.html", "popup.css", "persistent-service.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
