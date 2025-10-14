@@ -1,202 +1,332 @@
-// Modern Service Worker for DigitalClerk Extension
-// Replaces background.js with modern Chrome Extension Manifest V3 patterns
+// Working Service Worker for DigitalClerk Chrome Extension
+// Manifest V3 compatible
 
-import { PersistentFormFillerService } from './persistent-service.js';
+let documentData = null;
+let userProfiles = new Map();
+let formContext = null;
+let syncQueue = [];
 
-// Service worker lifecycle
-self.addEventListener('install', (event) => {
-  console.log('DigitalClerk Service Worker installing...');
-  event.waitUntil(
-    caches.open('digitalclerk-v1').then((cache) => {
-      return cache.addAll([
-        'popup.html',
-        'popup.css',
-        'popup.js',
-        'content.js',
-        'content.css'
-      ]);
-    })
-  );
-});
-
-self.addEventListener('activate', (event) => {
-  console.log('DigitalClerk Service Worker activated');
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== 'digitalclerk-v1') {
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
-  );
-});
-
-// Initialize persistent service
-let persistentService;
-
-chrome.runtime.onStartup.addListener(() => {
-  initializePersistentService();
-});
-
+// Initialize on install
 chrome.runtime.onInstalled.addListener(() => {
-  initializePersistentService();
+  console.log('DigitalClerk Extension installed');
+  chrome.storage.local.clear();
+  
+  // Set up periodic sync alarm
+  chrome.alarms.create('syncCheck', { periodInMinutes: 5 });
 });
 
-async function initializePersistentService() {
-  try {
-    persistentService = new PersistentFormFillerService();
-    await persistentService.initialize();
-    console.log('Persistent service initialized successfully');
-  } catch (error) {
-    console.error('Failed to initialize persistent service:', error);
-  }
-}
+// Initialize on startup
+chrome.runtime.onStartup.addListener(() => {
+  console.log('DigitalClerk Extension started');
+  chrome.alarms.create('syncCheck', { periodInMinutes: 5 });
+});
 
-// Modern message handling with error boundaries
+// Handle periodic sync
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'syncCheck') {
+    processSyncQueue();
+  }
+});
+
+// Listen for messages from popup/content script
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('Message received:', request.action, 'from', sender.url || 'popup');
+  
+  handleMessage(request, sender)
+    .then(response => sendResponse(response))
+    .catch(error => {
+      console.error('Message handler error:', error);
+      sendResponse({ success: false, error: error.message });
+    });
+  
+  return true; // Keep message channel open for async
+});
+
+// Listen for messages from web app
 chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
+  console.log('External message received:', request.action);
+  
   handleExternalMessage(request, sender)
-    .then(sendResponse)
-    .catch((error) => {
+    .then(response => sendResponse(response))
+    .catch(error => {
       console.error('External message handler error:', error);
       sendResponse({ success: false, error: error.message });
     });
-  return true; // Keep the message channel open for async response
-});
-
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  handleInternalMessage(request, sender)
-    .then(sendResponse)
-    .catch((error) => {
-      console.error('Internal message handler error:', error);
-      sendResponse({ success: false, error: error.message });
-    });
+  
   return true;
 });
 
-// Enhanced external message handling
-async function handleExternalMessage(request, sender) {
-  if (!persistentService) {
-    await initializePersistentService();
+// Main message handler
+async function handleMessage(request, sender) {
+  switch (request.action) {
+    case 'ping':
+      return { success: true, message: 'Service Worker ready' };
+    
+    case 'getDocumentData':
+      return { success: true, data: documentData };
+    
+    case 'saveDocument':
+      documentData = request.data;
+      await chrome.storage.local.set({ documentData });
+      return { success: true, message: 'Document saved' };
+    
+    case 'getProfileData':
+      const profile = selectBestProfile(request.formType, request.url);
+      const allProfiles = Object.fromEntries(userProfiles);
+      return { 
+        success: true, 
+        profile,
+        allProfiles
+      };
+    
+    case 'saveProfile':
+      const profileId = request.profile.profileId || generateId();
+      const profileToSave = {
+        ...request.profile,
+        profileId,
+        createdAt: request.profile.createdAt || Date.now(),
+        lastUsed: Date.now()
+      };
+      userProfiles.set(profileId, profileToSave);
+      await chrome.storage.local.set({ 
+        userProfiles: Object.fromEntries(userProfiles) 
+      });
+      return { success: true, profileId };
+    
+    case 'getAllProfiles':
+      return { 
+        success: true, 
+        profiles: Object.fromEntries(userProfiles),
+        count: userProfiles.size
+      };
+    
+    case 'deleteProfile':
+      userProfiles.delete(request.profileId);
+      await chrome.storage.local.set({ 
+        userProfiles: Object.fromEntries(userProfiles) 
+      });
+      return { success: true };
+    
+    case 'detectFormType':
+      const formType = detectFormType(sender.tab.url, request.formFields);
+      formContext = {
+        url: sender.tab.url,
+        formType,
+        timestamp: Date.now()
+      };
+      return { 
+        success: true, 
+        formType,
+        context: formContext
+      };
+    
+    case 'logActivity':
+      console.log('Activity:', request.data);
+      return { success: true };
+    
+    default:
+      return { success: false, error: 'Unknown action: ' + request.action };
   }
+}
 
+// External message handler (from web app)
+async function handleExternalMessage(request, sender) {
   switch (request.action) {
     case 'receiveDocument':
-      return await persistentService.handleDocumentReceived(request.data);
+      const enhancedDoc = {
+        ...request.data,
+        timestamp: Date.now(),
+        expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000), // 7 days
+        documentId: generateId()
+      };
+      documentData = enhancedDoc;
+      await chrome.storage.local.set({ documentData: enhancedDoc });
+      
+      // Notify all tabs
+      notifyAllTabs('documentReceived', enhancedDoc);
+      
+      // Auto-create profile from document
+      await autoCreateProfile(enhancedDoc);
+      
+      return { success: true, message: 'Document received' };
     
     case 'checkExtension':
       return { 
         success: true, 
         message: 'DigitalClerk Extension is installed',
-        version: chrome.runtime.getManifest().version
+        version: '1.0.0'
       };
     
     case 'syncProfile':
-      return await persistentService.handleProfileSync(request.data);
+      const pId = request.data.profileId || generateId();
+      const syncedProfile = {
+        ...request.data,
+        profileId: pId,
+        lastSync: Date.now(),
+        version: (userProfiles.get(pId)?.version || 0) + 1
+      };
+      userProfiles.set(pId, syncedProfile);
+      await chrome.storage.local.set({ 
+        userProfiles: Object.fromEntries(userProfiles) 
+      });
+      return { success: true, profileId: pId };
     
     case 'getStoredProfiles':
-      const profiles = await persistentService.getStoredProfiles();
       return { 
         success: true, 
-        profiles,
-        count: Object.keys(profiles).length
+        profiles: Object.fromEntries(userProfiles),
+        count: userProfiles.size
       };
     
     default:
-      throw new Error(`Unknown external action: ${request.action}`);
+      return { success: false, error: 'Unknown external action' };
   }
 }
 
-// Enhanced internal message handling
-async function handleInternalMessage(request, sender) {
-  if (!persistentService) {
-    await initializePersistentService();
+// Profile selection logic
+function selectBestProfile(formType, url) {
+  const profiles = Array.from(userProfiles.values());
+  
+  if (profiles.length === 0) {
+    return documentData ? { data: documentData } : null;
   }
+  
+  // Score and sort profiles
+  const scored = profiles.map(p => ({
+    ...p,
+    score: (p.profileType === formType ? 0.5 : 0) + 
+           (p.lastUsedUrl === url ? 0.3 : 0) +
+           (p.confidence || 0.2)
+  }));
+  
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0];
+}
 
-  switch (request.action) {
-    case 'getDocumentData':
-      const documentData = await persistentService.getDocumentData();
-      return { success: true, data: documentData };
-    
-    case 'getProfileData':
-      return await persistentService.getProfileData(request.formType, request.url);
-    
-    case 'detectFormType':
-      return await persistentService.detectFormType(request.formFields, sender.tab);
-    
-    case 'performRescan':
-      return await persistentService.performRescan(request.missingFields, sender.tab.id);
-    
-    case 'logActivity':
-      console.log('Form filling activity:', request.data);
-      return { success: true };
-    
-    case 'syncFormContext':
-      return await persistentService.syncFormContext(request.formContext, sender.tab);
-    
-    default:
-      throw new Error(`Unknown internal action: ${request.action}`);
+// Detect form type from URL and fields
+function detectFormType(url, formFields = []) {
+  const urlLower = url.toLowerCase();
+  
+  // Quick pattern matching
+  if (/aadhaar|aadhar/.test(urlLower)) return 'aadhaar';
+  if (/pan/.test(urlLower)) return 'pan';
+  if (/passport/.test(urlLower)) return 'passport';
+  if (/driving|license/.test(urlLower)) return 'driving_license';
+  if (/scholarship/.test(urlLower)) return 'scholarship';
+  if (/voter/.test(urlLower)) return 'voter_id';
+  
+  // Analyze form fields
+  const fieldText = formFields
+    .map(f => (f.name || f.id || f.placeholder || '').toLowerCase())
+    .join(' ');
+  
+  if (/scholarship|grant|student/.test(fieldText)) return 'scholarship';
+  if (/aadhaar|aadhar|uid/.test(fieldText)) return 'aadhaar';
+  if (/pan/.test(fieldText)) return 'pan';
+  
+  return 'general';
+}
+
+// Auto-create profile from document
+async function autoCreateProfile(documentData) {
+  if (!documentData.extractedData) return;
+  
+  const profileId = `auto_${Date.now()}`;
+  const autoProfile = {
+    profileId,
+    profileName: generateProfileName(documentData),
+    profileType: detectProfileTypeFromDoc(documentData),
+    data: documentData.extractedData,
+    autoGenerated: true,
+    confidence: calculateConfidence(documentData.extractedData),
+    createdAt: Date.now(),
+    lastUsed: Date.now()
+  };
+  
+  if (autoProfile.confidence > 0.6) {
+    userProfiles.set(profileId, autoProfile);
+    await chrome.storage.local.set({ 
+      userProfiles: Object.fromEntries(userProfiles) 
+    });
+    console.log('Auto-created profile:', profileId);
   }
 }
 
-// Enhanced tab management
-chrome.tabs.onActivated.addListener(async (activeInfo) => {
-  try {
-    if (persistentService) {
-      await persistentService.onTabActivated(activeInfo);
-    }
-  } catch (error) {
-    console.error('Tab activation handler error:', error);
-  }
-});
+function detectProfileTypeFromDoc(doc) {
+  const type = doc.documentType?.toLowerCase() || '';
+  if (/marksheet|transcript|student/.test(type)) return 'student';
+  if (/resume|cv|job/.test(type)) return 'job_seeker';
+  return 'general';
+}
 
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  try {
-    if (changeInfo.status === 'complete' && persistentService) {
-      await persistentService.onTabUpdated(tabId, tab);
-    }
-  } catch (error) {
-    console.error('Tab update handler error:', error);
-  }
-});
+function generateProfileName(doc) {
+  const data = doc.extractedData || {};
+  const name = data.fullName || data.name || 'Profile';
+  const type = doc.documentType || '';
+  return `${name} (${type})`.trim();
+}
 
-// Network monitoring for offline support
-chrome.webNavigation.onCompleted.addListener(async (details) => {
-  try {
-    if (details.frameId === 0 && persistentService) {
-      await persistentService.checkNetworkAndSync();
-    }
-  } catch (error) {
-    console.error('Navigation handler error:', error);
-  }
-});
+function calculateConfidence(data) {
+  if (!data || Object.keys(data).length === 0) return 0;
+  let score = 0;
+  if (data.fullName || data.name) score += 0.3;
+  if (data.email) score += 0.2;
+  if (data.phone) score += 0.2;
+  if (data.address) score += 0.1;
+  score += Math.min(0.2, Object.keys(data).length * 0.05);
+  return Math.min(1.0, score);
+}
 
-// Alarm for periodic sync
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  try {
-    if (alarm.name === 'periodicSync' && persistentService) {
-      await persistentService.performPeriodicSync();
+// Sync queue processing
+async function processSyncQueue() {
+  if (syncQueue.length === 0) return;
+  
+  console.log('Processing sync queue:', syncQueue.length, 'items');
+  
+  const queue = [...syncQueue];
+  syncQueue = [];
+  
+  for (const item of queue) {
+    try {
+      await chrome.storage.local.set({ [item.key]: item.data });
+      console.log('Synced:', item.key);
+    } catch (error) {
+      console.error('Sync failed for', item.key, error);
+      syncQueue.push(item); // Re-queue
     }
-  } catch (error) {
-    console.error('Alarm handler error:', error);
   }
-});
+}
 
-// Set up periodic sync
-chrome.runtime.onStartup.addListener(() => {
-  chrome.alarms.create('periodicSync', { 
-    delayInMinutes: 5, 
-    periodInMinutes: 15 
+// Notify all tabs about events
+function notifyAllTabs(action, data) {
+  chrome.tabs.query({}, (tabs) => {
+    tabs.forEach(tab => {
+      try {
+        chrome.tabs.sendMessage(tab.id, { action, data });
+      } catch (error) {
+        // Ignore errors for tabs without content script
+      }
+    });
+  });
+}
+
+// Utility functions
+function generateId() {
+  return `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// Load stored data on startup
+chrome.storage.local.get(['documentData', 'userProfiles'], (result) => {
+  if (result.documentData) {
+    documentData = result.documentData;
+  }
+  if (result.userProfiles) {
+    userProfiles = new Map(Object.entries(result.userProfiles));
+  }
+  console.log('Loaded from storage:', {
+    hasDocument: !!documentData,
+    profileCount: userProfiles.size
   });
 });
 
-// Handle unhandled errors
-self.addEventListener('error', (event) => {
-  console.error('Service Worker unhandled error:', event.error);
-});
-
-self.addEventListener('unhandledrejection', (event) => {
-  console.error('Service Worker unhandled promise rejection:', event.reason);
-});
+console.log('DigitalClerk Service Worker loaded');
