@@ -1,139 +1,229 @@
-// Smart AI-powered document classification for any document type
-// Automatically detects document types without predefined patterns
+// SmartDocumentClassifier.ts
+// AI-powered classification for all 29 document types with fallback to rule-based
 
 export interface DocumentClassification {
   documentType: string;
   category: string;
   confidence: number;
-  subType?: string;
   characteristics: string[];
-  suggestedForms?: string[];
-}
-
-export interface DocumentTypeMapping {
-  type: string;
-  category: 'government_id' | 'educational' | 'financial' | 'legal' | 'medical' | 'employment' | 'other';
-  commonFields: string[];
-  relatedForms: string[];
+  suggestedForms: string[];
 }
 
 export class SmartDocumentClassifier {
   
-  // Dynamic document type mappings that can be expanded
-  private static documentTypeMappings: DocumentTypeMapping[] = [
-    // Government IDs
-    { type: 'pan_card', category: 'government_id', commonFields: ['name', 'fathersName', 'dob', 'panNumber'], relatedForms: ['income_tax', 'bank_account', 'investment'] },
-    { type: 'aadhaar_card', category: 'government_id', commonFields: ['name', 'dob', 'address', 'aadhaarNumber'], relatedForms: ['bank_account', 'mobile_connection', 'gas_connection'] },
-    { type: 'passport', category: 'government_id', commonFields: ['name', 'dob', 'address', 'passportNumber'], relatedForms: ['visa_application', 'travel_insurance'] },
-    { type: 'voter_id', category: 'government_id', commonFields: ['name', 'address', 'voterNumber'], relatedForms: ['election_registration'] },
-    { type: 'driving_license', category: 'government_id', commonFields: ['name', 'address', 'dob', 'licenseNumber'], relatedForms: ['vehicle_registration', 'insurance'] },
-    
-    // Educational Documents
-    { type: 'marksheet', category: 'educational', commonFields: ['name', 'rollNumber', 'marks', 'board'], relatedForms: ['college_admission', 'scholarship'] },
-    { type: 'degree_certificate', category: 'educational', commonFields: ['name', 'degree', 'university', 'year'], relatedForms: ['job_application', 'higher_studies'] },
-    { type: 'transfer_certificate', category: 'educational', commonFields: ['name', 'school', 'class'], relatedForms: ['school_admission'] },
-    
-    // Financial Documents
-    { type: 'bank_statement', category: 'financial', commonFields: ['accountNumber', 'balance', 'transactions'], relatedForms: ['loan_application', 'credit_card'] },
-    { type: 'salary_slip', category: 'financial', commonFields: ['name', 'salary', 'company', 'month'], relatedForms: ['loan_application', 'tax_filing'] },
-    { type: 'tax_return', category: 'financial', commonFields: ['name', 'income', 'tax', 'year'], relatedForms: ['income_certificate'] },
-    
-    // Legal Documents
-    { type: 'property_document', category: 'legal', commonFields: ['ownerName', 'propertyAddress', 'area'], relatedForms: ['property_registration', 'home_loan'] },
-    { type: 'agreement', category: 'legal', commonFields: ['parties', 'terms', 'date'], relatedForms: ['legal_registration'] },
-    
-    // Medical Documents
-    { type: 'medical_certificate', category: 'medical', commonFields: ['patientName', 'doctorName', 'diagnosis'], relatedForms: ['insurance_claim', 'medical_leave'] },
-    { type: 'prescription', category: 'medical', commonFields: ['patientName', 'medicines', 'doctorName'], relatedForms: ['medicine_purchase'] },
-    
-    // Employment Documents
-    { type: 'employment_certificate', category: 'employment', commonFields: ['employeeName', 'company', 'designation'], relatedForms: ['loan_application', 'visa_application'] },
-    { type: 'experience_letter', category: 'employment', commonFields: ['employeeName', 'experience', 'company'], relatedForms: ['job_application'] }
-  ];
+  private static readonly DOCUMENT_CATEGORIES = {
+    identity: ['aadhaar', 'pan', 'passport', 'voter_id', 'driving_license', 'ration_card'],
+    educational: ['marksheet', 'degree_certificate', 'caste_certificate', 'caste_validity', 'income_certificate', 'domicile_certificate'],
+    financial: ['bank_statement', 'salary_slip', 'itr', 'form_16'],
+    utility: ['electricity_bill', 'gas_bill_lpg', 'gas_bill_png', 'water_bill', 'telephone_bill', 'broadband_bill'],
+    vehicle: ['vehicle_rc', 'vehicle_insurance'],
+    property: ['property_tax', 'rent_agreement'],
+    health: ['ayushman_bharat', 'abha_card']
+  };
+
+  private static readonly FORM_SUGGESTIONS: Record<string, string[]> = {
+    aadhaar: ['KYC Form', 'Address Proof', 'Identity Proof'],
+    pan: ['Income Tax Form', 'Bank Account Opening', 'Financial KYC'],
+    caste_certificate: ['Scholarship Application', 'College Admission', 'Government Job Application'],
+    caste_validity: ['College Admission', 'Competitive Exam Application'],
+    marksheet: ['College Admission', 'Job Application', 'Higher Education'],
+    bank_statement: ['Loan Application', 'Visa Application', 'Income Proof'],
+    salary_slip: ['Loan Application', 'Credit Card', 'Income Proof'],
+    driving_license: ['Vehicle Registration', 'Insurance', 'Identity Proof'],
+    passport: ['Visa Application', 'International Travel', 'Identity Proof'],
+    voter_id: ['Identity Proof', 'Address Proof', 'Age Proof']
+  };
 
   /**
-   * Classifies any document using AI-powered analysis
+   * Classify document using AI with rule-based fallback
    */
-  static async classifyDocument(ocrText: string, imageBase64?: string): Promise<DocumentClassification> {
+  static async classifyDocument(
+    ocrText: string,
+    imageBase64?: string
+  ): Promise<DocumentClassification> {
+    
+    console.log('🔍 Starting document classification...');
+
+    // Try AI classification first
+    if (imageBase64) {
+      try {
+        const aiClassification = await this.classifyWithAI(ocrText, imageBase64);
+        if (aiClassification && aiClassification.confidence > 0.7) {
+          console.log('✅ AI Classification successful');
+          return aiClassification;
+        }
+      } catch (error) {
+        console.warn('⚠️ AI classification failed, falling back to rule-based');
+      }
+    }
+
+    // Fallback to rule-based classification
+    return this.classifyWithRules(ocrText);
+  }
+
+  /**
+   * AI-powered classification using GPT-4 Vision
+   */
+  private static async classifyWithAI(
+    ocrText: string,
+    imageBase64: string
+  ): Promise<DocumentClassification | null> {
+    
     try {
-      // First try AI-powered classification
-      const aiClassification = await this.classifyWithAI(ocrText, imageBase64);
-      
-      // Enhance with rule-based validation
-      const enhancedClassification = this.enhanceClassification(aiClassification, ocrText);
-      
-      return enhancedClassification;
+      const response = await fetch('/api/ai-document-classifier', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ocrText,
+          imageBase64,
+          documentTypes: this.getAllDocumentTypes(),
+          model: 'gpt-4-vision-preview'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('AI classification API failed');
+      }
+
+      const result = await response.json();
+      return this.parseAIResponse(result);
       
     } catch (error) {
-      console.error('AI classification failed:', error);
-      // Fallback to rule-based classification
-      return this.fallbackClassification(ocrText);
+      console.error('AI classification error:', error);
+      return null;
     }
   }
 
   /**
-   * Uses AI to classify document type intelligently
+   * Rule-based classification (fallback)
    */
-  private static async classifyWithAI(ocrText: string, imageBase64?: string): Promise<DocumentClassification> {
-    const prompt = this.createClassificationPrompt(ocrText);
-    
-    const response = await fetch('/api/ai-document-classifier', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+  private static classifyWithRules(ocrText: string): DocumentClassification {
+    const upperText = ocrText.toUpperCase();
+    const classifications: Array<{ type: string; score: number; chars: string[] }> = [];
+
+    // Score each document type
+    const scoringRules = {
+      aadhaar: {
+        keywords: ['UIDAI', 'AADHAAR', 'आधार', 'UNIQUE IDENTIFICATION'],
+        patterns: [/\d{4}\s?\d{4}\s?\d{4}/],
+        score: 0
       },
-      body: JSON.stringify({
-        prompt,
-        imageBase64,
-        model: 'gpt-4.1-2025-04-14'
-      }),
+      pan: {
+        keywords: ['INCOME TAX', 'PERMANENT ACCOUNT', 'PAN'],
+        patterns: [/[A-Z]{5}\d{4}[A-Z]/],
+        score: 0
+      },
+      caste_certificate: {
+        keywords: ['CASTE CERTIFICATE', 'जाति प्रमाण', 'SC', 'ST', 'OBC'],
+        patterns: [/\b\d{4}\b/],
+        score: 0
+      },
+      caste_validity: {
+        keywords: ['CASTE VALIDITY', 'SCRUTINY COMMITTEE', 'VALIDITY'],
+        patterns: [/\b\d{8}\b/],
+        score: 0
+      },
+      voter_id: {
+        keywords: ['ELECTION COMMISSION', 'EPIC', 'VOTER'],
+        patterns: [/[A-Z]{3}\d{7}/],
+        score: 0
+      },
+      passport: {
+        keywords: ['PASSPORT', 'REPUBLIC OF INDIA', 'MINISTRY OF EXTERNAL'],
+        patterns: [/[A-Z]{1,2}\d{7}/],
+        score: 0
+      },
+      driving_license: {
+        keywords: ['DRIVING LICENCE', 'TRANSPORT DEPARTMENT', 'DL'],
+        patterns: [/[A-Z]{2}-\d{2}-\d{4}-\d{7}/],
+        score: 0
+      },
+      marksheet: {
+        keywords: ['MARKSHEET', 'MARK SHEET', 'UNIVERSITY', 'BOARD', 'EXAMINATION'],
+        patterns: [/ROLL|PERCENTAGE|CGPA/i],
+        score: 0
+      },
+      bank_statement: {
+        keywords: ['BANK STATEMENT', 'ACCOUNT STATEMENT', 'IFSC'],
+        patterns: [/OPENING BALANCE|CLOSING BALANCE|DEBIT|CREDIT/i],
+        score: 0
+      },
+      salary_slip: {
+        keywords: ['SALARY SLIP', 'PAY SLIP', 'GROSS SALARY', 'NET SALARY'],
+        patterns: [/BASIC|HRA|DEDUCTIONS/i],
+        score: 0
+      },
+      electricity_bill: {
+        keywords: ['ELECTRICITY', 'POWER', 'CONSUMER NUMBER', 'UNITS'],
+        patterns: [/KWH|METER/i],
+        score: 0
+      },
+      vehicle_rc: {
+        keywords: ['REGISTRATION CERTIFICATE', 'VEHICLE', 'ENGINE NUMBER'],
+        patterns: [/[A-Z]{2}-\d{2}-[A-Z]{1,2}-\d{4}/],
+        score: 0
+      },
+      itr: {
+        keywords: ['INCOME TAX RETURN', 'ITR', 'ACKNOWLEDGEMENT'],
+        patterns: [/ASSESSMENT YEAR|PAN/i],
+        score: 0
+      }
+    };
+
+    // Calculate scores
+    Object.entries(scoringRules).forEach(([docType, rules]) => {
+      let score = 0;
+      const characteristics: string[] = [];
+
+      // Keyword matching (40 points)
+      rules.keywords.forEach(keyword => {
+        if (upperText.includes(keyword)) {
+          score += 10;
+          characteristics.push(`Keyword: ${keyword}`);
+        }
+      });
+
+      // Pattern matching (60 points)
+      rules.patterns.forEach(pattern => {
+        if (pattern.test(ocrText) || pattern.test(upperText)) {
+          score += 30;
+          characteristics.push(`Pattern match`);
+        }
+      });
+
+      if (score > 0) {
+        classifications.push({ type: docType, score, chars: characteristics });
+      }
     });
 
-    if (!response.ok) {
-      throw new Error(`AI classification failed: ${response.statusText}`);
+    // Sort by score
+    classifications.sort((a, b) => b.score - a.score);
+
+    // Return best match or unknown
+    if (classifications.length > 0 && classifications[0].score >= 30) {
+      const best = classifications[0];
+      return {
+        documentType: best.type,
+        category: this.getCategory(best.type),
+        confidence: Math.min(best.score / 100, 1),
+        characteristics: best.chars,
+        suggestedForms: this.FORM_SUGGESTIONS[best.type] || []
+      };
     }
 
-    const aiResponse = await response.json();
-    return this.parseClassificationResponse(aiResponse);
+    return {
+      documentType: 'unknown',
+      category: 'other',
+      confidence: 0.1,
+      characteristics: ['Unable to identify document type'],
+      suggestedForms: []
+    };
   }
 
   /**
-   * Creates intelligent prompt for document classification
+   * Parse AI classification response
    */
-  private static createClassificationPrompt(ocrText: string): string {
-    const knownTypes = this.documentTypeMappings.map(m => m.type).join(', ');
-    
-    return `You are an expert document classifier. Analyze this OCR text and classify the document type with high accuracy.
-
-OCR Text:
-${ocrText}
-
-Known document types include: ${knownTypes}
-
-But you can identify ANY document type, not just these. Consider:
-1. Document headers and official text
-2. Field patterns and data types
-3. Language and formatting style
-4. Government/institutional markers
-5. Purpose and context clues
-
-Return response in this exact JSON format:
-{
-  "documentType": "specific_type",
-  "category": "government_id|educational|financial|legal|medical|employment|other",
-  "confidence": 0.95,
-  "subType": "optional_subtype",
-  "characteristics": ["key identifying features"],
-  "suggestedForms": ["forms this document might be useful for"]
-}
-
-Be specific with document type (e.g., "pan_card" not just "id_card").`;
-  }
-
-  /**
-   * Parses AI classification response
-   */
-  private static parseClassificationResponse(aiResponse: any): DocumentClassification {
+  private static parseAIResponse(aiResponse: any): DocumentClassification {
     try {
       const parsed = typeof aiResponse.result === 'string' 
         ? JSON.parse(aiResponse.result)
@@ -141,178 +231,60 @@ Be specific with document type (e.g., "pan_card" not just "id_card").`;
 
       return {
         documentType: parsed.documentType || 'unknown',
-        category: parsed.category || 'other',
-        confidence: parsed.confidence || 0.8,
-        subType: parsed.subType,
+        category: this.getCategory(parsed.documentType),
+        confidence: parsed.confidence || 0.5,
         characteristics: parsed.characteristics || [],
-        suggestedForms: parsed.suggestedForms || []
+        suggestedForms: this.FORM_SUGGESTIONS[parsed.documentType] || []
       };
     } catch (error) {
-      console.error('Failed to parse classification response:', error);
-      throw error;
+      console.error('Failed to parse AI response:', error);
+      return {
+        documentType: 'unknown',
+        category: 'other',
+        confidence: 0.1,
+        characteristics: [],
+        suggestedForms: []
+      };
     }
   }
 
   /**
-   * Enhances AI classification with rule-based validation
+   * Get category for document type
    */
-  private static enhanceClassification(
-    aiClassification: DocumentClassification, 
-    ocrText: string
-  ): DocumentClassification {
-    const upperText = ocrText.toUpperCase();
-    
-    // Validate and adjust confidence based on known patterns
-    const validationRules = [
-      {
-        type: 'pan_card',
-        patterns: [/\b[A-Z]{5}[0-9]{4}[A-Z]\b/, /INCOME TAX/, /PERMANENT ACCOUNT/],
-        boost: 0.2
-      },
-      {
-        type: 'aadhaar_card',
-        patterns: [/\b\d{4}\s?\d{4}\s?\d{4}\b/, /UIDAI/, /आधार/],
-        boost: 0.2
-      },
-      {
-        type: 'passport',
-        patterns: [/\b[A-Z]\d{7}\b/, /REPUBLIC OF INDIA/, /PASSPORT/],
-        boost: 0.2
-      },
-      // Add more validation rules for other document types
-    ];
-
-    let enhancedClassification = { ...aiClassification };
-
-    validationRules.forEach(rule => {
-      if (rule.patterns.some(pattern => pattern.test(upperText))) {
-        if (aiClassification.documentType === rule.type) {
-          // Boost confidence if AI got it right
-          enhancedClassification.confidence = Math.min(1.0, enhancedClassification.confidence + rule.boost);
-        } else if (enhancedClassification.confidence < 0.7) {
-          // Override if AI confidence is low and we have strong pattern match
-          enhancedClassification.documentType = rule.type;
-          enhancedClassification.confidence = 0.85;
-        }
-      }
-    });
-
-    // Add mapping data if available
-    const mapping = this.documentTypeMappings.find(m => m.type === enhancedClassification.documentType);
-    if (mapping) {
-      enhancedClassification.category = mapping.category;
-      enhancedClassification.suggestedForms = mapping.relatedForms;
-    }
-
-    return enhancedClassification;
-  }
-
-  /**
-   * Fallback classification using rule-based patterns
-   */
-  private static fallbackClassification(ocrText: string): DocumentClassification {
-    const upperText = ocrText.toUpperCase();
-    
-    // Rule-based classification patterns
-    const classificationRules = [
-      {
-        type: 'pan_card',
-        category: 'government_id' as const,
-        patterns: [/\b[A-Z]{5}[0-9]{4}[A-Z]\b/, /INCOME TAX/, /PERMANENT ACCOUNT/],
-        characteristics: ['PAN number format', 'Income Tax Department']
-      },
-      {
-        type: 'aadhaar_card',
-        category: 'government_id' as const,
-        patterns: [/\b\d{4}\s?\d{4}\s?\d{4}\b/, /UIDAI/, /आधार/, /UNIQUE IDENTIFICATION/],
-        characteristics: ['12-digit number', 'UIDAI header']
-      },
-      {
-        type: 'passport',
-        category: 'government_id' as const,
-        patterns: [/\b[A-Z]\d{7}\b/, /REPUBLIC OF INDIA/, /PASSPORT/, /MINISTRY OF EXTERNAL/],
-        characteristics: ['Passport number format', 'Republic of India header']
-      },
-      {
-        type: 'marksheet',
-        category: 'educational' as const,
-        patterns: [/MARKS?HEET/, /ROLL\s+NO/, /BOARD/, /EXAMINATION/, /SUBJECT/, /MARKS/],
-        characteristics: ['Roll number', 'Marks/grades', 'Board name']
-      },
-      {
-        type: 'salary_slip',
-        category: 'financial' as const,
-        patterns: [/SALARY/, /PAY\s+SLIP/, /BASIC\s+PAY/, /ALLOWANCE/, /DEDUCTION/, /NET\s+PAY/],
-        characteristics: ['Salary components', 'Monthly pay details']
-      }
-    ];
-
-    for (const rule of classificationRules) {
-      const matchCount = rule.patterns.filter(pattern => pattern.test(upperText)).length;
-      if (matchCount > 0) {
-        const confidence = Math.min(0.9, 0.6 + (matchCount * 0.15));
-        
-        const mapping = this.documentTypeMappings.find(m => m.type === rule.type);
-        
-        return {
-          documentType: rule.type,
-          category: rule.category,
-          confidence,
-          characteristics: rule.characteristics,
-          suggestedForms: mapping?.relatedForms || []
-        };
+  private static getCategory(documentType: string): string {
+    for (const [category, types] of Object.entries(this.DOCUMENT_CATEGORIES)) {
+      if (types.includes(documentType)) {
+        return category;
       }
     }
-
-    return {
-      documentType: 'unknown',
-      category: 'other',
-      confidence: 0.3,
-      characteristics: ['Unable to classify'],
-      suggestedForms: []
-    };
+    return 'other';
   }
 
   /**
-   * Gets document type mapping information
+   * Get all supported document types
    */
-  static getDocumentTypeMapping(documentType: string): DocumentTypeMapping | undefined {
-    return this.documentTypeMappings.find(mapping => mapping.type === documentType);
+  private static getAllDocumentTypes(): string[] {
+    return Object.values(this.DOCUMENT_CATEGORIES).flat();
   }
 
   /**
-   * Adds new document type mapping (for learning system)
-   */
-  static addDocumentTypeMapping(mapping: DocumentTypeMapping): void {
-    const existingIndex = this.documentTypeMappings.findIndex(m => m.type === mapping.type);
-    if (existingIndex >= 0) {
-      this.documentTypeMappings[existingIndex] = mapping;
-    } else {
-      this.documentTypeMappings.push(mapping);
-    }
-  }
-
-  /**
-   * Gets suggested forms for a document type
+   * Get suggested forms for a document type
    */
   static getSuggestedForms(documentType: string): string[] {
-    const mapping = this.getDocumentTypeMapping(documentType);
-    return mapping?.relatedForms || [];
+    return this.FORM_SUGGESTIONS[documentType] || [];
   }
 
   /**
-   * Gets all supported document categories
+   * Get documents by category
    */
-  static getAllCategories(): string[] {
-    return [...new Set(this.documentTypeMappings.map(m => m.category))];
+  static getDocumentsByCategory(category: string): string[] {
+    return this.DOCUMENT_CATEGORIES[category as keyof typeof this.DOCUMENT_CATEGORIES] || [];
   }
 
   /**
-   * Gets all document types in a category
+   * Validate if document type is supported
    */
-  static getDocumentTypesByCategory(category: string): string[] {
-    return this.documentTypeMappings
-      .filter(m => m.category === category)
-      .map(m => m.type);
+  static isDocumentTypeSupported(documentType: string): boolean {
+    return this.getAllDocumentTypes().includes(documentType);
   }
 }
