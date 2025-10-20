@@ -1,10 +1,23 @@
-// Universal Document Processor - Orchestrates the complete AI-powered document processing workflow
-// Handles any document type with intelligent field extraction and form mapping
+// UPDATED: Universal Document Processor - Complete integration with all 29 document types
+// Orchestrates AI-powered document processing with preprocessing and validation
 
 import { UniversalFieldDetector, DetectedField, UniversalExtractionResult } from './UniversalFieldDetector';
 import { SmartDocumentClassifier, DocumentClassification } from './SmartDocumentClassifier';
 import { IntelligentFieldMapper, FieldMapping, FormFieldInfo } from './IntelligentFieldMapper';
+import { DocumentFormatRequirements } from './DocumentFormatRequirements';
+import { TextPreprocessor } from './TextPreprocessor';
 import { performOCR } from './performOCR';
+
+// Import all specific extractors
+import { AadhaarExtractor } from './AadhaarExtractor';
+import { PANCardExtractor } from './PANCardExtractor';
+import { CasteCertificateExtractor } from './CasteCertificateExtractor';
+import { CasteValidityExtractor } from './CasteValidityExtractor';
+import { VoterIDExtractor } from './VoterIDExtractor';
+import { PassportExtractor } from './PassportExtractor';
+import { DrivingLicenseExtractor } from './DrivingLicenseExtractor';
+import { MarksheetExtractor } from './MarksheetExtractor';
+// Add more extractors as you create them...
 
 export interface UniversalProcessingResult {
   // Document analysis
@@ -27,6 +40,26 @@ export interface UniversalProcessingResult {
   processingTime: number;
   aiUsed: boolean;
   fallbackUsed: boolean;
+  
+  // NEW: Validation results
+  validationResult?: {
+    valid: boolean;
+    errors: string[];
+    warnings: string[];
+  };
+  
+  // NEW: Format validation
+  formatValidation?: {
+    valid: boolean;
+    errors: string[];
+  };
+  
+  // NEW: Preprocessing info
+  preprocessingApplied?: {
+    languageDetected: string;
+    transliterationApplied: boolean;
+    ocrCorrectionsApplied: boolean;
+  };
 }
 
 export interface ProcessingOptions {
@@ -35,6 +68,9 @@ export interface ProcessingOptions {
   includeImage: boolean;
   confidenceThreshold: number;
   enableLearning: boolean;
+  // NEW: Preprocessing options
+  enablePreprocessing?: boolean;
+  validateFormat?: boolean;
 }
 
 export class UniversalDocumentProcessor {
@@ -53,6 +89,8 @@ export class UniversalDocumentProcessor {
       includeImage: true,
       confidenceThreshold: 0.6,
       enableLearning: true,
+      enablePreprocessing: true, // NEW
+      validateFormat: true, // NEW
       ...options
     };
     
@@ -63,34 +101,162 @@ export class UniversalDocumentProcessor {
     });
 
     try {
-      // Step 1: Perform OCR extraction
+      // STEP 1: Perform OCR extraction
       console.log('📄 Step 1: Performing OCR...');
       const ocrResult = await performOCR(file, 'auto', 'en');
+      
+      // STEP 1.5: Preprocess OCR text (NEW!)
+      console.log('🔄 Step 1.5: Preprocessing OCR text...');
+      let processedText = ocrResult.extracted.text;
+      let preprocessingInfo = {
+        languageDetected: 'english' as 'hindi' | 'english' | 'mixed',
+        transliterationApplied: false,
+        ocrCorrectionsApplied: false
+      };
+      
+      if (config.enablePreprocessing) {
+        // Detect language
+        preprocessingInfo.languageDetected = TextPreprocessor.detectLanguage(processedText);
+        console.log(`📝 Language detected: ${preprocessingInfo.languageDetected}`);
+        
+        // Apply preprocessing
+        processedText = TextPreprocessor.preprocess(processedText, {
+          transliterateHindi: true,
+          correctOCRErrors: true,
+          normalizeWhitespace: true,
+          removeHeaders: false // Keep headers for context
+        });
+        
+        preprocessingInfo.transliterationApplied = preprocessingInfo.languageDetected !== 'english';
+        preprocessingInfo.ocrCorrectionsApplied = true;
+        
+        console.log('✅ Preprocessing completed');
+      }
       
       let imageBase64: string | undefined;
       if (config.includeImage && config.useAI) {
         imageBase64 = await this.fileToBase64(file);
       }
       
-      // Step 2: Classify document type
+      // STEP 2: Classify document type (UPDATED!)
       console.log('🔍 Step 2: Classifying document type...');
       const documentClassification = await SmartDocumentClassifier.classifyDocument(
-        ocrResult.extracted.text,
+        processedText,
         imageBase64
       );
       
-      console.log('📋 Document classified as:', documentClassification);
+      console.log('📋 Document classified as:', documentClassification.documentType, 
+                  `(${(documentClassification.confidence * 100).toFixed(1)}%)`);
       
-      // Step 3: Extract fields using AI
-      console.log('🎯 Step 3: Detecting fields universally...');
-      const extractionResult = await UniversalFieldDetector.detectFieldsWithAI(
-        ocrResult.extracted.text,
-        imageBase64
+      // STEP 2.5: Validate file format (NEW!)
+      let formatValidation: { valid: boolean; errors: string[] } | undefined;
+      if (config.validateFormat && documentClassification.documentType !== 'unknown') {
+        console.log('✓ Step 2.5: Validating file format...');
+        formatValidation = DocumentFormatRequirements.validateFile(
+          documentClassification.documentType,
+          file.size,
+          file.type
+        );
+        
+        if (!formatValidation.valid) {
+          console.warn('⚠️ Format validation failed:', formatValidation.errors);
+        } else {
+          console.log('✅ Format validation passed');
+        }
+      }
+      
+      // STEP 3: Extract fields using specific extractor (UPDATED!)
+      console.log('🎯 Step 3: Extracting fields with specific extractor...');
+      let specificExtractionResult: any = null;
+
+      // Route to correct extractor based on document type
+      switch (documentClassification.documentType) {
+        case 'aadhaar':
+          specificExtractionResult = AadhaarExtractor.extractFromAadhaarCard(processedText);
+          break;
+          
+        case 'pan':
+          specificExtractionResult = PANCardExtractor.extractFromPANCard(processedText);
+          break;
+          
+        case 'caste_certificate':
+          specificExtractionResult = CasteCertificateExtractor.extractFromCasteCertificate(processedText);
+          break;
+          
+        case 'caste_validity':
+          specificExtractionResult = CasteValidityExtractor.extractFromCasteValidity(processedText);
+          break;
+          
+        case 'voter_id':
+          specificExtractionResult = VoterIDExtractor.extractFromVoterID(processedText);
+          break;
+          
+        case 'passport':
+          specificExtractionResult = PassportExtractor.extractFromPassport(processedText);
+          break;
+          
+        case 'driving_license':
+          specificExtractionResult = DrivingLicenseExtractor.extractFromDrivingLicense(processedText);
+          break;
+          
+        case 'marksheet':
+          specificExtractionResult = MarksheetExtractor.extractFromMarksheet(processedText);
+          break;
+          
+        // TODO: Add more extractors as you create them
+        // case 'bank_statement':
+        //   specificExtractionResult = BankStatementExtractor.extractFromBankStatement(processedText);
+        //   break;
+        
+        // case 'salary_slip':
+        //   specificExtractionResult = SalarySlipExtractor.extractFromSalarySlip(processedText);
+        //   break;
+        
+        default:
+          // Fallback to AI extraction
+          console.log('⚠️ No specific extractor found, using AI fallback');
+          specificExtractionResult = await UniversalFieldDetector.detectFieldsWithAI(
+            processedText,
+            imageBase64
+          );
+      }
+      
+      // Convert specific extraction result to universal format
+      const extractionResult = this.convertToUniversalFormat(
+        specificExtractionResult,
+        documentClassification.documentType
       );
       
       console.log('📊 Fields detected:', extractionResult.detectedFields.length);
       
-      // Step 4: Map fields to target form (if provided)
+      // STEP 3.5: Validate extracted data (NEW!)
+      let validationResult: { valid: boolean; errors: string[]; warnings: string[] } | undefined;
+      if (config.validateFormat && documentClassification.documentType !== 'unknown') {
+        console.log('✓ Step 3.5: Validating extracted data...');
+        
+        // Create validation object from extracted fields
+        const extractedData: Record<string, any> = {};
+        if (specificExtractionResult.extractedFields) {
+          Object.assign(extractedData, specificExtractionResult.extractedFields);
+        }
+        
+        validationResult = DocumentFormatRequirements.validateExtractedData(
+          documentClassification.documentType,
+          extractedData
+        );
+        
+        if (!validationResult.valid) {
+          console.warn('⚠️ Data validation errors:', validationResult.errors);
+        }
+        if (validationResult.warnings.length > 0) {
+          console.warn('⚠️ Data validation warnings:', validationResult.warnings);
+        }
+        if (validationResult.valid && validationResult.warnings.length === 0) {
+          console.log('✅ Data validation passed');
+        }
+      }
+      
+      // STEP 4: Map fields to target form (if provided)
       let fieldMappings: FieldMapping[] = [];
       let formReadyData: Record<string, any> = {};
       let unmappedFields: DetectedField[] = [...extractionResult.detectedFields];
@@ -101,7 +267,8 @@ export class UniversalDocumentProcessor {
         fieldMappings = await IntelligentFieldMapper.mapFieldsToForm(
           extractionResult.detectedFields,
           config.targetFormFields,
-          config.useAI
+          config.useAI,
+          documentClassification // Pass document context for better mapping
         );
         
         // Create form-ready data
@@ -121,7 +288,7 @@ export class UniversalDocumentProcessor {
         console.log('❓ Unmapped fields:', unmappedFields.length);
       }
       
-      // Step 5: Calculate quality metrics
+      // STEP 5: Calculate quality metrics
       const overallConfidence = this.calculateOverallConfidence(
         documentClassification,
         extractionResult,
@@ -132,16 +299,20 @@ export class UniversalDocumentProcessor {
         documentClassification,
         extractionResult,
         fieldMappings,
-        config
+        config,
+        validationResult,
+        formatValidation,
+        preprocessingInfo
       );
       
       const processingTime = Date.now() - startTime;
       
       console.log('🎉 Universal processing completed!', {
         processingTime: `${processingTime}ms`,
-        confidence: overallConfidence,
+        confidence: `${(overallConfidence * 100).toFixed(1)}%`,
         fieldsDetected: extractionResult.detectedFields.length,
-        fieldsMapped: fieldMappings.length
+        fieldsMapped: fieldMappings.length,
+        validationPassed: validationResult?.valid ?? true
       });
       
       const result: UniversalProcessingResult = {
@@ -157,10 +328,13 @@ export class UniversalDocumentProcessor {
         aiUsed: config.useAI,
         fallbackUsed: extractionResult.processingNotes.some(note => 
           note.includes('fallback') || note.includes('rule-based')
-        )
+        ),
+        validationResult,
+        formatValidation,
+        preprocessingApplied: preprocessingInfo
       };
       
-      // Step 6: Learning and improvement (if enabled)
+      // STEP 6: Learning and improvement (if enabled)
       if (config.enableLearning) {
         this.learnFromProcessing(result);
       }
@@ -196,6 +370,57 @@ export class UniversalDocumentProcessor {
         fallbackUsed: true
       };
     }
+  }
+
+  /**
+   * NEW: Convert specific extractor result to universal format
+   */
+  private static convertToUniversalFormat(
+    specificResult: any,
+    documentType: string
+  ): UniversalExtractionResult {
+    const detectedFields: DetectedField[] = [];
+    
+    // Convert extractedFields to DetectedField array
+    if (specificResult.extractedFields) {
+      Object.entries(specificResult.extractedFields).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== '') {
+          detectedFields.push({
+            fieldName: key,
+            value: value as string,
+            confidence: specificResult.confidence || 0.8,
+            fieldType: this.inferFieldType(key, value as string),
+            extractionMethod: 'rule-based'
+          });
+        }
+      });
+    }
+    
+    return {
+      documentType: documentType,
+      detectedFields: detectedFields,
+      confidence: specificResult.confidence / 100 || 0.8, // Normalize to 0-1
+      processingNotes: [`Extracted ${detectedFields.length} fields using ${documentType} specific extractor`]
+    };
+  }
+
+  /**
+   * NEW: Infer field type from field name and value
+   */
+  private static inferFieldType(fieldName: string, value: string): string {
+    const fieldLower = fieldName.toLowerCase();
+    
+    if (fieldLower.includes('name')) return 'text';
+    if (fieldLower.includes('date') || fieldLower.includes('dob')) return 'date';
+    if (fieldLower.includes('number') || fieldLower.includes('id')) return 'number';
+    if (fieldLower.includes('email')) return 'email';
+    if (fieldLower.includes('phone') || fieldLower.includes('mobile')) return 'phone';
+    if (fieldLower.includes('address')) return 'address';
+    if (fieldLower.includes('pincode') || fieldLower.includes('pin')) return 'pincode';
+    if (fieldLower.includes('amount') || fieldLower.includes('salary')) return 'amount';
+    if (fieldLower.includes('percentage') || fieldLower.includes('cgpa')) return 'number';
+    
+    return 'text';
   }
 
   /**
@@ -281,13 +506,16 @@ export class UniversalDocumentProcessor {
   }
 
   /**
-   * Generates comprehensive processing notes
+   * UPDATED: Generates comprehensive processing notes
    */
   private static generateProcessingNotes(
     classification: DocumentClassification,
     extraction: UniversalExtractionResult,
     mappings: FieldMapping[],
-    config: ProcessingOptions
+    config: ProcessingOptions,
+    validation?: { valid: boolean; errors: string[]; warnings: string[] },
+    formatValidation?: { valid: boolean; errors: string[] },
+    preprocessingInfo?: { languageDetected: string; transliterationApplied: boolean; ocrCorrectionsApplied: boolean }
   ): string[] {
     const notes: string[] = [];
     
@@ -295,10 +523,40 @@ export class UniversalDocumentProcessor {
     notes.push(`Document identified as: ${classification.documentType} (${classification.category})`);
     notes.push(`Classification confidence: ${(classification.confidence * 100).toFixed(1)}%`);
     
+    // Preprocessing notes (NEW!)
+    if (preprocessingInfo) {
+      notes.push(`Language detected: ${preprocessingInfo.languageDetected}`);
+      if (preprocessingInfo.transliterationApplied) {
+        notes.push('Hindi to English transliteration applied');
+      }
+      if (preprocessingInfo.ocrCorrectionsApplied) {
+        notes.push('OCR error corrections applied');
+      }
+    }
+    
     // Extraction notes
     notes.push(`Detected ${extraction.detectedFields.length} fields`);
     notes.push(`Extraction confidence: ${(extraction.confidence * 100).toFixed(1)}%`);
     notes.push(...extraction.processingNotes);
+    
+    // Validation notes (NEW!)
+    if (validation) {
+      if (validation.valid) {
+        notes.push('✅ All required fields validated successfully');
+      } else {
+        notes.push(`⚠️ Validation issues found: ${validation.errors.length} error(s)`);
+        validation.errors.forEach(error => notes.push(`  - ${error}`));
+      }
+      if (validation.warnings.length > 0) {
+        notes.push(`⚠️ ${validation.warnings.length} warning(s)`);
+      }
+    }
+    
+    // Format validation notes (NEW!)
+    if (formatValidation && !formatValidation.valid) {
+      notes.push('⚠️ File format issues detected');
+      formatValidation.errors.forEach(error => notes.push(`  - ${error}`));
+    }
     
     // Mapping notes
     if (mappings.length > 0) {
@@ -329,7 +587,9 @@ export class UniversalDocumentProcessor {
         category: result.documentClassification.category,
         successfulMappings: result.fieldMappings.filter(m => m.confidence > 0.8),
         timestamp: new Date().toISOString(),
-        confidence: result.overallConfidence
+        confidence: result.overallConfidence,
+        validationPassed: result.validationResult?.valid ?? true,
+        fieldsExtracted: result.detectedFields.length
       };
       
       const existingData = JSON.parse(localStorage.getItem('documentProcessingLearning') || '[]');
@@ -357,10 +617,13 @@ export class UniversalDocumentProcessor {
       
       const stats = {
         totalProcessed: learningData.length,
-        averageConfidence: learningData.reduce((sum: number, item: any) => sum + item.confidence, 0) / learningData.length,
+        averageConfidence: learningData.length > 0 
+          ? learningData.reduce((sum: number, item: any) => sum + item.confidence, 0) / learningData.length 
+          : 0,
         documentTypes: [...new Set(learningData.map((item: any) => item.documentType))],
         categories: [...new Set(learningData.map((item: any) => item.category))],
-        recentProcessing: learningData.slice(-10)
+        recentProcessing: learningData.slice(-10),
+        successRate: learningData.filter((item: any) => item.validationPassed).length / Math.max(learningData.length, 1)
       };
       
       return stats;
@@ -403,6 +666,18 @@ export class UniversalDocumentProcessor {
     if (result.fallbackUsed) {
       issues.push('AI processing failed, used fallback');
       recommendations.push('Check AI service availability and try again');
+    }
+    
+    // Check validation results (NEW!)
+    if (result.validationResult && !result.validationResult.valid) {
+      issues.push('Data validation failed');
+      recommendations.push('Review and correct the flagged fields');
+    }
+    
+    // Check format validation (NEW!)
+    if (result.formatValidation && !result.formatValidation.valid) {
+      issues.push('File format validation failed');
+      recommendations.push('Ensure file meets format requirements');
     }
     
     return {
