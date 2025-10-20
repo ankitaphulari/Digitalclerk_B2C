@@ -213,11 +213,13 @@ export class UniversalDocumentProcessor {
         //   break;
         
         default:
-          // Fallback to AI extraction
-          console.log('⚠️ No specific extractor found, using AI fallback');
-          specificExtractionResult = await UniversalFieldDetector.detectFieldsWithAI(
+          // Fallback to Universal Fallback Extractor (NEW!)
+          console.log('⚠️ No specific extractor found, using Universal Fallback');
+          const { UniversalFallbackExtractor } = await import('./UniversalFallbackExtractor');
+          specificExtractionResult = await UniversalFallbackExtractor.extractFromUnknownDocument(
             processedText,
-            imageBase64
+            imageBase64,
+            config.targetFormFields?.map(f => f.fieldName)
           );
       }
       
