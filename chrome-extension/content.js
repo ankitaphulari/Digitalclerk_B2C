@@ -1,560 +1,218 @@
-// Enhanced Content Script with Universal Form Recognition
-class UniversalFormFiller {
+// Simplified content.js with edit functionality
+class FormFillerContent {
     constructor() {
-        this.isActive = false;
-        this.currentProfile = null;
-        this.formContext = null;
-        this.observedForms = new Set();
-        
-        this.initializeUniversalFiller();
-    }
-
-    async initializeUniversalFiller() {
-        // Set up message listener
+        this.extractedData = null;
+        this.filledFields = new Map();
         this.setupMessageListener();
-        
-        // Detect forms on page load
-        await this.detectAndAnalyzeForms();
-        
-        // Set up mutation observer for dynamic forms
-        this.setupFormObserver();
-        
-        // Get profile data from background service
-        await this.loadProfileData();
-        
-        console.log('Universal Form Filler initialized');
+        console.log('Form Filler Content Script Loaded');
     }
 
     setupMessageListener() {
         chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-            try {
-                switch (request.action) {
-                    case 'ping':
-                        sendResponse({ success: true, message: 'Universal Form Filler ready' });
-                        break;
-                        
-                    case 'scanForms':
-                        const forms = this.scanFormsOnPage();
-                        sendResponse({ success: true, forms: forms });
-                        break;
-                        
-                    case 'fillForm':
-                        const result = this.fillFormOnPage(request.formData);
-                        sendResponse({ success: result, message: result ? 'Form filled' : 'Failed to fill form' });
-                        break;
+            switch (request.action) {
+                case 'fillForm':
+                    this.fillFormWithData(request.data);
+                    sendResponse({ success: true });
+                    break;
                     
-                    case 'fillFormsWithData':
-                        this.fillFormsWithExtractedData(request.extractedData, request.settings);
-                        sendResponse({ success: true, message: 'Forms filled with extracted data' });
-                        break;
-                        
-                    case 'documentReceived':
-                        this.handleDocumentReceived(request.data);
-                        sendResponse({ success: true });
-                        break;
-                        
-                    case 'activateAutoFill':
-                        this.activateAutoFill(request.enabled);
-                        sendResponse({ success: true });
-                        break;
-                        
-                    default:
-                        sendResponse({ success: false, error: 'Unknown action' });
-                }
-            } catch (error) {
-                console.error('Content script error:', error);
-                sendResponse({ success: false, error: error.message });
+                case 'getExtractedData':
+                    sendResponse({ data: this.extractedData });
+                    break;
             }
-            
             return true;
         });
     }
 
-    async detectAndAnalyzeForms() {
-        const forms = this.scanFormsOnPage();
-        
-        if (forms.length > 0) {
-            // Send form details to background for type detection
-            const response = await chrome.runtime.sendMessage({
-                action: 'detectFormType',
-                formFields: this.extractAllFormFields(),
-                url: window.location.href
-            });
-            
-            if (response.success) {
-                this.formContext = response.context;
-                console.log('Form type detected:', response.formType);
-                
-                // Show subtle indication that forms are detected
-                this.showFormDetectionIndicator(forms.length, response.formType);
-            }
+    async fillFormWithData(data) {
+        if (!data) {
+            console.error('No data to fill');
+            return;
         }
-    }
 
-    async loadProfileData() {
-        try {
-            const response = await chrome.runtime.sendMessage({
-                action: 'getProfileData',
-                formType: this.formContext?.detectedType,
-                url: window.location.href
-            });
-            
-            if (response.success && response.profile) {
-                this.currentProfile = response.profile;
-                console.log('Loaded profile data for auto-fill');
-                
-                // Proactively fill forms if auto-fill is enabled
-                if (this.shouldAutoFill()) {
-                    await this.smartAutoFill();
-                }
-            }
-        } catch (error) {
-            console.error('Failed to load profile data:', error);
-        }
-    }
-
-    shouldAutoFill() {
-        // Check if auto-fill is enabled and we have profile data
-        return this.currentProfile && 
-               this.formContext && 
-               this.isFormSafeToFill();
-    }
-
-    isFormSafeToFill() {
-        // Basic safety checks - avoid filling sensitive forms automatically
-        const url = window.location.href.toLowerCase();
-        const unsafePatterns = [
-            /payment/, /billing/, /checkout/, /bank/, /financial/,
-            /password/, /login/, /signin/, /signup/
-        ];
-        
-        return !unsafePatterns.some(pattern => pattern.test(url));
-    }
-
-    async smartAutoFill() {
-        if (!this.currentProfile) return;
-        
-        const forms = this.scanFormsOnPage();
-        let filledFields = 0;
-        
-        for (const form of forms) {
-            filledFields += await this.fillFormWithProfile(form, this.currentProfile);
-        }
-        
-        if (filledFields > 0) {
-            this.showAutoFillNotification(filledFields);
-            
-            // Log activity to background
-            chrome.runtime.sendMessage({
-                action: 'logActivity',
-                data: {
-                    action: 'auto_fill',
-                    fieldsCount: filledFields,
-                    formType: this.formContext?.detectedType,
-                    url: window.location.href,
-                    timestamp: Date.now()
-                }
-            });
-        }
-    }
-
-    setupFormObserver() {
-        // Watch for dynamically added forms
-        const observer = new MutationObserver((mutations) => {
-            let hasNewForms = false;
-            
-            mutations.forEach((mutation) => {
-                mutation.addedNodes.forEach((node) => {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        const forms = node.querySelectorAll ? node.querySelectorAll('form') : [];
-                        if (forms.length > 0 || node.tagName === 'FORM') {
-                            hasNewForms = true;
-                        }
-                    }
-                });
-            });
-            
-            if (hasNewForms) {
-                setTimeout(() => this.detectAndAnalyzeForms(), 1000);
-            }
-        });
-        
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-    }
-
-    scanFormsOnPage() {
-        const forms = [];
-        const formElements = document.querySelectorAll('form');
-        
-        formElements.forEach((form, index) => {
-            const formData = {
-                index: index,
-                action: form.action || '',
-                method: form.method || 'get',
-                fields: this.extractFormFields(form)
-            };
-            forms.push(formData);
-        });
-
-        return forms;
-    }
-
-    extractFormFields(form) {
-        const fields = [];
-        const inputs = form.querySelectorAll('input, select, textarea');
-        
-        inputs.forEach(input => {
-            // Skip hidden, submit, and button inputs
-            if (['hidden', 'submit', 'button', 'reset'].includes(input.type)) {
-                return;
-            }
-            
-            const fieldData = {
-                type: input.type || input.tagName.toLowerCase(),
-                name: input.name || '',
-                id: input.id || '',
-                placeholder: input.placeholder || '',
-                required: input.required || false,
-                value: input.value || '',
-                className: input.className || '',
-                label: this.getFieldLabel(input),
-                maxLength: input.maxLength || null,
-                pattern: input.pattern || null
-            };
-            fields.push(fieldData);
-        });
-
-        return fields;
-    }
-
-    extractAllFormFields() {
-        const allFields = [];
+        this.extractedData = data;
         const forms = document.querySelectorAll('form');
-        
+        let totalFilled = 0;
+
         forms.forEach(form => {
-            const fields = this.extractFormFields(form);
-            allFields.push(...fields);
-        });
-        
-        return allFields;
-    }
-
-    getFieldLabel(input) {
-        // Try to find associated label
-        if (input.id) {
-            const label = document.querySelector(`label[for="${input.id}"]`);
-            if (label) return label.textContent.trim();
-        }
-        
-        // Check for parent label
-        const parentLabel = input.closest('label');
-        if (parentLabel) {
-            return parentLabel.textContent.replace(input.value, '').trim();
-        }
-        
-        // Check for nearby text
-        const prevSibling = input.previousElementSibling;
-        if (prevSibling && prevSibling.tagName === 'LABEL') {
-            return prevSibling.textContent.trim();
-        }
-        
-        return '';
-    }
-
-    fillFormOnPage(formData) {
-        try {
-            const forms = document.querySelectorAll('form');
-            const targetForm = forms[formData.index];
+            const inputs = form.querySelectorAll('input, select, textarea');
             
-            if (!targetForm) {
-                throw new Error('Target form not found');
-            }
+            inputs.forEach(input => {
+                if (this.shouldSkipField(input)) return;
 
-            return this.fillFormWithData(targetForm, formData.fields);
-        } catch (error) {
-            console.error('Error filling form:', error);
-            return false;
+                const value = this.findValueForField(input, data);
+                if (value && !input.value) {
+                    this.fillField(input, value);
+                    totalFilled++;
+                }
+            });
+        });
+
+        if (totalFilled > 0) {
+            this.showNotification(`✓ Filled ${totalFilled} field(s)`);
         }
     }
 
-    fillFormWithData(form, fieldsData) {
-        let filledCount = 0;
-        
-        fieldsData.forEach(fieldData => {
-            const input = this.findFormInput(form, fieldData);
-            
-            if (input && fieldData.value && !input.value) {
-                this.setInputValue(input, fieldData.value);
-                filledCount++;
-            }
-        });
-        
-        return filledCount;
+    shouldSkipField(input) {
+        const skipTypes = ['hidden', 'submit', 'button', 'reset', 'file'];
+        return skipTypes.includes(input.type);
     }
 
-    async fillFormWithProfile(formData, profile) {
-        const form = document.querySelectorAll('form')[formData.index];
-        if (!form || !profile.data) return 0;
+    findValueForField(input, data) {
+        const fieldName = (input.name || input.id || input.placeholder || '').toLowerCase();
         
-        let filledCount = 0;
-        const profileData = profile.data;
-        
-        // Smart field mapping
-        const fieldMappings = this.createFieldMappings(profileData);
-        
-        const inputs = form.querySelectorAll('input, select, textarea');
-        inputs.forEach(input => {
-            if (['hidden', 'submit', 'button', 'reset'].includes(input.type)) {
-                return;
+        // Try exact match first
+        for (const [key, value] of Object.entries(data)) {
+            if (fieldName.includes(key.toLowerCase())) {
+                return value;
             }
-            
-            const value = this.findBestValueForField(input, fieldMappings);
-            if (value && !input.value) {
-                this.setInputValue(input, value);
-                filledCount++;
-                
-                // Add visual feedback
-                this.highlightFilledField(input);
-            }
-        });
-        
-        return filledCount;
-    }
+        }
 
-    createFieldMappings(profileData) {
-        const mappings = new Map();
-        
-        // Standard mappings
-        const standardMappings = {
-            'fullName': ['name', 'full_name', 'fullname', 'applicant_name'],
-            'firstName': ['first_name', 'fname', 'given_name'],
-            'lastName': ['last_name', 'lname', 'surname', 'family_name'],
-            'email': ['email', 'email_address', 'e_mail'],
-            'phone': ['phone', 'mobile', 'phone_number', 'contact_number', 'telephone'],
-            'address': ['address', 'street_address', 'full_address'],
-            'dateOfBirth': ['dob', 'date_of_birth', 'birth_date', 'birthdate'],
-            'gender': ['gender', 'sex'],
-            'fatherName': ['father_name', 'fathers_name', 'parent_name']
+        // Try common patterns
+        const patterns = {
+            name: ['name', 'fullname', 'full_name'],
+            email: ['email', 'e-mail', 'mail'],
+            phone: ['phone', 'mobile', 'contact', 'tel'],
+            address: ['address', 'street', 'location']
         };
-        
-        Object.entries(profileData).forEach(([key, value]) => {
-            // Direct mapping
-            mappings.set(key.toLowerCase(), value);
-            
-            // Standard field variations
-            if (standardMappings[key]) {
-                standardMappings[key].forEach(variation => {
-                    mappings.set(variation, value);
-                });
-            }
-        });
-        
-        return mappings;
-    }
 
-    findBestValueForField(input, mappings) {
-        const fieldName = (input.name || input.id || '').toLowerCase();
-        const placeholder = (input.placeholder || '').toLowerCase();
-        const label = this.getFieldLabel(input).toLowerCase();
-        
-        // Try exact matches first
-        const candidates = [fieldName, placeholder, label];
-        
-        for (const candidate of candidates) {
-            if (mappings.has(candidate)) {
-                return this.formatValueForInput(mappings.get(candidate), input);
+        for (const [dataKey, keywords] of Object.entries(patterns)) {
+            if (keywords.some(kw => fieldName.includes(kw)) && data[dataKey]) {
+                return data[dataKey];
             }
         }
-        
-        // Try partial matches
-        for (const [mappingKey, value] of mappings.entries()) {
-            if (candidates.some(candidate => 
-                candidate.includes(mappingKey) || mappingKey.includes(candidate)
-            )) {
-                return this.formatValueForInput(value, input);
-            }
-        }
-        
+
         return null;
     }
 
-    formatValueForInput(value, input) {
-        if (!value) return null;
-        
-        const stringValue = typeof value === 'object' ? value.value || '' : String(value);
-        
-        // Format based on input type
-        switch (input.type) {
-            case 'email':
-                return stringValue.toLowerCase();
-            case 'tel':
-            case 'phone':
-                return stringValue.replace(/[^\d+\-\s()]/g, '');
-            case 'date':
-                return this.formatDateForInput(stringValue);
-            case 'number':
-                const num = parseFloat(stringValue);
-                return isNaN(num) ? null : num.toString();
-            default:
-                return stringValue;
+    fillField(input, value) {
+        // Store original value
+        if (!this.filledFields.has(input)) {
+            this.filledFields.set(input, {
+                originalValue: input.value,
+                filledValue: value
+            });
         }
-    }
 
-    formatDateForInput(dateString) {
-        try {
-            const date = new Date(dateString);
-            if (isNaN(date.getTime())) return null;
-            
-            return date.toISOString().split('T')[0]; // YYYY-MM-DD format
-        } catch {
-            return null;
-        }
-    }
-
-    findFormInput(form, fieldData) {
-        let input = null;
-        
-        // Try multiple strategies to find the input
-        if (fieldData.name) {
-            input = form.querySelector(`[name="${fieldData.name}"]`);
-        }
-        if (!input && fieldData.id) {
-            input = form.querySelector(`#${fieldData.id}`);
-        }
-        if (!input && fieldData.className) {
-            input = form.querySelector(`.${fieldData.className}`);
-        }
-        
-        return input;
-    }
-
-    setInputValue(input, value) {
-        const oldValue = input.value;
+        // Fill the field
         input.value = value;
         
-        // Trigger events for frameworks that listen to them
+        // Trigger events
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
+
+        // Add visual feedback
+        this.highlightField(input);
         
-        // For React and other frameworks
-        const event = new Event('input', { bubbles: true });
-        Object.defineProperty(event, 'target', {
-            writable: false,
-            value: input
-        });
-        input.dispatchEvent(event);
+        // Add edit button
+        this.addEditButton(input);
     }
 
-    fillFormsWithExtractedData(extractedData, settings = {}) {
-        const forms = this.scanFormsOnPage();
-        let totalFilled = 0;
+    highlightField(input) {
+        const originalBorder = input.style.border;
+        const originalBackground = input.style.backgroundColor;
         
-        forms.forEach((formData, index) => {
-            const filled = this.fillFormWithProfile(formData, { data: extractedData });
-            totalFilled += filled;
-        });
-        
-        if (totalFilled > 0) {
-            this.showAutoFillNotification(totalFilled);
-        }
-        
-        return totalFilled;
-    }
+        input.style.border = '2px solid #10b981';
+        input.style.backgroundColor = '#ecfdf5';
 
-    // Visual feedback methods
-    highlightFilledField(input) {
-        input.style.outline = '2px solid #4CAF50';
-        input.style.backgroundColor = '#E8F5E8';
-        
         setTimeout(() => {
-            input.style.outline = '';
-            input.style.backgroundColor = '';
+            input.style.border = originalBorder;
+            input.style.backgroundColor = originalBackground;
         }, 2000);
     }
 
-    showFormDetectionIndicator(formCount, formType) {
-        const indicator = document.createElement('div');
-        indicator.id = 'digitalclerk-indicator';
-        indicator.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #2196F3;
+    addEditButton(input) {
+        // Check if edit button already exists
+        if (input.dataset.hasEditBtn) return;
+        
+        input.dataset.hasEditBtn = 'true';
+
+        // Create edit button
+        const editBtn = document.createElement('button');
+        editBtn.innerHTML = '✏️';
+        editBtn.className = 'digitalclerk-edit-btn';
+        editBtn.style.cssText = `
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #667eea;
             color: white;
-            padding: 10px 15px;
-            border-radius: 5px;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 12px;
             z-index: 10000;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            opacity: 0.8;
+            transition: opacity 0.2s;
         `;
-        indicator.innerHTML = `
-            🔍 DigitalClerk: ${formCount} form(s) detected
-            <br><small>Type: ${formType || 'general'}</small>
-        `;
-        
-        document.body.appendChild(indicator);
-        
-        setTimeout(() => {
-            indicator.remove();
-        }, 3000);
+
+        editBtn.addEventListener('mouseenter', () => {
+            editBtn.style.opacity = '1';
+        });
+
+        editBtn.addEventListener('mouseleave', () => {
+            editBtn.style.opacity = '0.8';
+        });
+
+        editBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.makeFieldEditable(input, editBtn);
+        });
+
+        // Wrap input in relative container if needed
+        if (getComputedStyle(input.parentElement).position === 'static') {
+            input.parentElement.style.position = 'relative';
+        }
+
+        input.parentElement.appendChild(editBtn);
     }
 
-    showAutoFillNotification(fieldCount) {
+    makeFieldEditable(input, editBtn) {
+        input.focus();
+        input.select();
+        
+        // Change button to save
+        editBtn.innerHTML = '✓';
+        editBtn.style.background = '#10b981';
+        
+        const saveHandler = () => {
+            editBtn.innerHTML = '✏️';
+            editBtn.style.background = '#667eea';
+            input.removeEventListener('blur', saveHandler);
+        };
+
+        input.addEventListener('blur', saveHandler);
+    }
+
+    showNotification(message) {
         const notification = document.createElement('div');
         notification.style.cssText = `
             position: fixed;
             top: 20px;
             right: 20px;
-            background: #4CAF50;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
             color: white;
-            padding: 12px 20px;
-            border-radius: 5px;
+            padding: 16px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             z-index: 10000;
-            font-family: Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 14px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-        `;
-        notification.innerHTML = `
-            ✅ DigitalClerk: ${fieldCount} field(s) auto-filled
+            font-weight: 600;
+            animation: slideIn 0.3s ease;
         `;
         
+        notification.textContent = message;
         document.body.appendChild(notification);
-        
+
         setTimeout(() => {
-            notification.remove();
+            notification.style.animation = 'slideOut 0.3s ease';
+            setTimeout(() => notification.remove(), 300);
         }, 3000);
     }
-
-    handleDocumentReceived(documentData) {
-        console.log('Document received in content script:', documentData);
-        // Update current profile with new document data
-        this.currentProfile = {
-            data: documentData.extractedData,
-            profileType: 'auto',
-            confidence: 0.8
-        };
-        
-        // Attempt to fill forms with new data if appropriate
-        if (this.shouldAutoFill()) {
-            setTimeout(() => this.smartAutoFill(), 1000);
-        }
-    }
-
-    activateAutoFill(enabled) {
-        this.isActive = enabled;
-        
-        if (enabled && this.currentProfile) {
-            this.smartAutoFill();
-        }
-    }
 }
 
-// Initialize Universal Form Filler when content script loads
-if (typeof chrome !== 'undefined' && chrome.runtime) {
-    new UniversalFormFiller();
-    console.log('Universal Form Filler content script loaded');
-}
+// Initialize
+new FormFillerContent();
