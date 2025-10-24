@@ -1,20 +1,70 @@
-// Simplified popup.js for DigitalClerk
+// DigitalClerk Popup with Authentication
 class DigitalClerkPopup {
     constructor() {
+        // API Configuration - CHANGE THIS TO YOUR BACKEND URL
+        this.API_URL = 'https://your-api-url.com/api'; // TODO: Replace with your actual API
+        
+        this.user = null;
+        this.authToken = null;
         this.uploadedDocuments = [];
-        this.initializeUI();
-        this.loadStoredDocuments();
+        
+        this.init();
     }
 
-    initializeUI() {
-        // Main menu buttons
-        document.getElementById('createProfileBtn').addEventListener('click', () => {
-            this.openCreateProfile();
+    async init() {
+        // Check if user is already logged in
+        await this.checkAuth();
+        this.setupEventListeners();
+    }
+
+    async checkAuth() {
+        try {
+            const result = await chrome.storage.local.get(['authToken', 'user']);
+            
+            if (result.authToken && result.user) {
+                this.authToken = result.authToken;
+                this.user = result.user;
+                this.showMainScreen();
+            } else {
+                this.showAuthScreen();
+            }
+        } catch (error) {
+            console.error('Auth check error:', error);
+            this.showAuthScreen();
+        }
+        
+        this.hideLoading();
+    }
+
+    setupEventListeners() {
+        // Auth tab switching
+        document.getElementById('loginTab').addEventListener('click', () => this.showLoginForm());
+        document.getElementById('signupTab').addEventListener('click', () => this.showSignupForm());
+        document.getElementById('switchToSignup').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.showSignupForm();
+        });
+        document.getElementById('switchToLogin').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.showLoginForm();
         });
 
-        document.getElementById('quickFillBtn').addEventListener('click', () => {
-            this.showQuickFillSection();
+        // Auth buttons
+        document.getElementById('loginBtn').addEventListener('click', () => this.handleLogin());
+        document.getElementById('signupBtn').addEventListener('click', () => this.handleSignup());
+
+        // Enter key for forms
+        document.getElementById('loginPassword').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.handleLogin();
         });
+        document.getElementById('signupPassword').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.handleSignup();
+        });
+
+        // Main menu buttons
+        document.getElementById('quickFillBtn').addEventListener('click', () => this.showQuickFillSection());
+        document.getElementById('logoutBtn').addEventListener('click', () => this.handleLogout());
+        document.getElementById('upgradeLink').addEventListener('click', () => this.openUpgradePage());
 
         // Quick fill section
         const uploadArea = document.getElementById('uploadArea');
@@ -27,35 +77,212 @@ class DigitalClerkPopup {
         
         fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
 
-        document.getElementById('doneBtn').addEventListener('click', () => {
-            this.handleDone();
-        });
-
-        document.getElementById('backBtn').addEventListener('click', () => {
-            this.showMainMenu();
-        });
+        document.getElementById('doneBtn').addEventListener('click', () => this.handleDone());
+        document.getElementById('backBtn').addEventListener('click', () => this.showMainMenu());
     }
 
-    // Navigate to create profile (opens website)
-    openCreateProfile() {
-        chrome.tabs.create({
-            url: 'https://digitalclerk.app/create-profile'  // Change to your actual URL
-        });
+    // ==================== AUTH METHODS ====================
+
+    showLoginForm() {
+        document.getElementById('loginTab').classList.add('active');
+        document.getElementById('signupTab').classList.remove('active');
+        document.getElementById('loginForm').style.display = 'block';
+        document.getElementById('signupForm').style.display = 'none';
     }
 
-    // Show quick fill section
-    showQuickFillSection() {
-        document.getElementById('mainMenu').style.display = 'none';
-        document.getElementById('quickFillSection').style.display = 'block';
+    showSignupForm() {
+        document.getElementById('signupTab').classList.add('active');
+        document.getElementById('loginTab').classList.remove('active');
+        document.getElementById('signupForm').style.display = 'block';
+        document.getElementById('loginForm').style.display = 'none';
     }
 
-    // Show main menu
+    async handleLogin() {
+        const email = document.getElementById('loginEmail').value.trim();
+        const password = document.getElementById('loginPassword').value;
+
+        if (!email || !password) {
+            this.showMessage('Please fill all fields', 'error');
+            return;
+        }
+
+        const loginBtn = document.getElementById('loginBtn');
+        loginBtn.disabled = true;
+        loginBtn.textContent = 'Logging in...';
+
+        try {
+            // Call your backend API
+            const response = await fetch(`${this.API_URL}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                // Save auth data
+                this.authToken = data.token;
+                this.user = data.user;
+
+                await chrome.storage.local.set({
+                    authToken: data.token,
+                    user: data.user
+                });
+
+                this.showMessage('Login successful!', 'success');
+                setTimeout(() => this.showMainScreen(), 1000);
+            } else {
+                this.showMessage(data.message || 'Login failed', 'error');
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            this.showMessage('Network error. Please try again.', 'error');
+        } finally {
+            loginBtn.disabled = false;
+            loginBtn.textContent = 'Login';
+        }
+    }
+
+    async handleSignup() {
+        const company = document.getElementById('signupCompany').value.trim();
+        const email = document.getElementById('signupEmail').value.trim();
+        const password = document.getElementById('signupPassword').value;
+
+        if (!company || !email || !password) {
+            this.showMessage('Please fill all fields', 'error');
+            return;
+        }
+
+        if (password.length < 6) {
+            this.showMessage('Password must be at least 6 characters', 'error');
+            return;
+        }
+
+        const signupBtn = document.getElementById('signupBtn');
+        signupBtn.disabled = true;
+        signupBtn.textContent = 'Creating account...';
+
+        try {
+            const response = await fetch(`${this.API_URL}/auth/signup`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    companyName: company,
+                    email,
+                    password,
+                    plan: 'FREE' // Default plan
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                this.authToken = data.token;
+                this.user = data.user;
+
+                await chrome.storage.local.set({
+                    authToken: data.token,
+                    user: data.user
+                });
+
+                this.showMessage('Account created successfully!', 'success');
+                setTimeout(() => this.showMainScreen(), 1000);
+            } else {
+                this.showMessage(data.message || 'Signup failed', 'error');
+            }
+        } catch (error) {
+            console.error('Signup error:', error);
+            this.showMessage('Network error. Please try again.', 'error');
+        } finally {
+            signupBtn.disabled = false;
+            signupBtn.textContent = 'Create Account';
+        }
+    }
+
+    async handleLogout() {
+        if (!confirm('Are you sure you want to logout?')) return;
+
+        await chrome.storage.local.remove(['authToken', 'user']);
+        this.authToken = null;
+        this.user = null;
+        this.uploadedDocuments = [];
+
+        this.showMessage('Logged out successfully', 'success');
+        setTimeout(() => this.showAuthScreen(), 1000);
+    }
+
+    // ==================== UI NAVIGATION ====================
+
+    showAuthScreen() {
+        document.getElementById('loadingScreen').style.display = 'none';
+        document.getElementById('authScreen').classList.remove('hidden');
+        document.getElementById('mainScreen').classList.remove('active');
+        document.getElementById('quickFillSection').classList.remove('active');
+    }
+
+    showMainScreen() {
+        document.getElementById('loadingScreen').style.display = 'none';
+        document.getElementById('authScreen').classList.add('hidden');
+        document.getElementById('mainScreen').classList.add('active');
+        document.getElementById('quickFillSection').classList.remove('active');
+
+        this.updateUserInfo();
+    }
+
     showMainMenu() {
-        document.getElementById('mainMenu').style.display = 'block';
-        document.getElementById('quickFillSection').style.display = 'none';
+        document.getElementById('mainScreen').classList.add('active');
+        document.getElementById('quickFillSection').classList.remove('active');
     }
 
-    // Drag and drop handlers
+    showQuickFillSection() {
+        // Check usage limit before allowing upload
+        if (this.user && this.user.documentsUsed >= this.user.monthlyLimit) {
+            this.showMessage('Monthly limit exceeded! Please upgrade your plan.', 'error');
+            document.getElementById('limitWarning').style.display = 'block';
+            return;
+        }
+
+        document.getElementById('mainScreen').classList.remove('active');
+        document.getElementById('quickFillSection').classList.add('active');
+    }
+
+    hideLoading() {
+        document.getElementById('loadingScreen').style.display = 'none';
+    }
+
+    updateUserInfo() {
+        if (!this.user) return;
+
+        document.getElementById('userName').textContent = this.user.companyName || this.user.email;
+        document.getElementById('userPlan').textContent = this.user.plan || 'FREE PLAN';
+        
+        const used = this.user.documentsUsed || 0;
+        const limit = this.user.monthlyLimit || 10;
+        const percentage = (used / limit) * 100;
+
+        document.getElementById('usageCount').textContent = used;
+        document.getElementById('usageLimit').textContent = limit;
+        document.getElementById('usageFill').style.width = `${Math.min(percentage, 100)}%`;
+
+        // Show warning if limit reached
+        if (used >= limit) {
+            document.getElementById('limitWarning').style.display = 'block';
+            document.getElementById('usageFill').style.background = 'linear-gradient
+            document.getElementById('usageFill').style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+        } else {
+            document.getElementById('limitWarning').style.display = 'none';
+        }
+    }
+
+    openUpgradePage() {
+        chrome.tabs.create({
+            url: 'https://digitalclerk.app/pricing' // TODO: Change to your pricing page
+        });
+    }
+
+    // ==================== FILE UPLOAD ====================
+
     handleDragOver(e) {
         e.preventDefault();
         e.stopPropagation();
@@ -83,8 +310,13 @@ class DigitalClerkPopup {
         e.target.value = '';
     }
 
-    // Process uploaded files
     async processFiles(files) {
+        // Check limit before processing
+        if (this.user.documentsUsed >= this.user.monthlyLimit) {
+            this.showMessage('Monthly limit exceeded!', 'error');
+            return;
+        }
+
         const validFiles = files.filter(file => {
             const validTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
             return validTypes.includes(file.type);
@@ -95,12 +327,18 @@ class DigitalClerkPopup {
             return;
         }
 
+        // Check if adding these files would exceed limit
+        const remainingLimit = this.user.monthlyLimit - this.user.documentsUsed;
+        if (validFiles.length > remainingLimit) {
+            this.showMessage(`You can only upload ${remainingLimit} more document(s) this month`, 'error');
+            return;
+        }
+
         for (const file of validFiles) {
             await this.uploadFile(file);
         }
 
         this.updateDocumentList();
-        this.saveDocuments();
     }
 
     async uploadFile(file) {
@@ -112,17 +350,13 @@ class DigitalClerkPopup {
             uploadDate: new Date().toISOString()
         };
 
-        // Read file content for OCR (will be sent to backend later)
+        // Read file content
         const content = await this.readFileAsBase64(file);
         document.content = content;
 
         this.uploadedDocuments.push(document);
         
-        // Send to background for OCR extraction (silently)
-        chrome.runtime.sendMessage({
-            action: 'extractDocument',
-            document: document
-        });
+        this.showMessage(`Added: ${file.name}`, 'success');
     }
 
     readFileAsBase64(file) {
@@ -134,7 +368,6 @@ class DigitalClerkPopup {
         });
     }
 
-    // Update document list UI
     updateDocumentList() {
         const listContainer = document.getElementById('documentList');
         
@@ -163,52 +396,119 @@ class DigitalClerkPopup {
     deleteDocument(docId) {
         this.uploadedDocuments = this.uploadedDocuments.filter(d => d.id !== docId);
         this.updateDocumentList();
-        this.saveDocuments();
+        this.showMessage('Document removed', 'info');
     }
 
-    // Handle done button
+    // ==================== PROCESS & FILL FORM ====================
+
     async handleDone() {
         if (this.uploadedDocuments.length === 0) {
             this.showMessage('Please upload at least one document', 'error');
             return;
         }
 
-        // Save to storage
-        await this.saveDocuments();
-        
-        this.showMessage('Documents uploaded successfully! ✓', 'success');
-        
-        // Go back to main menu after 1 second
-        setTimeout(() => {
-            this.showMainMenu();
-        }, 1000);
-    }
+        const doneBtn = document.getElementById('doneBtn');
+        doneBtn.disabled = true;
+        doneBtn.textContent = 'Processing...';
 
-    // Storage functions
-    async saveDocuments() {
         try {
-            await chrome.storage.local.set({
-                uploadedDocuments: this.uploadedDocuments,
-                lastUpdate: Date.now()
-            });
-        } catch (error) {
-            console.error('Error saving documents:', error);
-        }
-    }
+            // Send documents to backend for extraction
+            const extractedData = await this.extractDocuments();
 
-    async loadStoredDocuments() {
-        try {
-            const result = await chrome.storage.local.get(['uploadedDocuments']);
-            if (result.uploadedDocuments) {
-                this.uploadedDocuments = result.uploadedDocuments;
+            if (extractedData) {
+                // Update usage count
+                await this.updateUsageCount(this.uploadedDocuments.length);
+
+                // Send to content script to fill form
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                
+                await chrome.tabs.sendMessage(tab.id, {
+                    action: 'fillForm',
+                    data: extractedData
+                });
+
+                this.showMessage('Form filled successfully! ✓', 'success');
+                
+                // Clear uploaded documents
+                this.uploadedDocuments = [];
                 this.updateDocumentList();
+
+                // Update user info
+                this.updateUserInfo();
+
+                setTimeout(() => {
+                    this.showMainMenu();
+                }, 1500);
             }
         } catch (error) {
-            console.error('Error loading documents:', error);
+            console.error('Processing error:', error);
+            this.showMessage('Error processing documents. Please try again.', 'error');
+        } finally {
+            doneBtn.disabled = false;
+            doneBtn.textContent = '✓ Process & Fill Form';
         }
     }
 
-    // UI helpers
+    async extractDocuments() {
+        try {
+            // Call your backend API for OCR extraction
+            const response = await fetch(`${this.API_URL}/extract`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.authToken}`
+                },
+                body: JSON.stringify({
+                    documents: this.uploadedDocuments
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                return result.data; // Extracted data from documents
+            } else if (result.error === 'LIMIT_EXCEEDED') {
+                this.showMessage('Monthly limit exceeded!', 'error');
+                document.getElementById('limitWarning').style.display = 'block';
+                return null;
+            } else {
+                throw new Error(result.message);
+            }
+        } catch (error) {
+            console.error('Extraction error:', error);
+            throw error;
+        }
+    }
+
+    async updateUsageCount(count) {
+        try {
+            // Update usage on backend
+            const response = await fetch(`${this.API_URL}/usage/increment`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.authToken}`
+                },
+                body: JSON.stringify({ count })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // Update local user data
+                this.user.documentsUsed = result.newUsageCount;
+                
+                await chrome.storage.local.set({
+                    user: this.user
+                });
+            }
+        } catch (error) {
+            console.error('Usage update error:', error);
+        }
+    }
+
+    // ==================== HELPERS ====================
+
     showMessage(message, type = 'info') {
         const container = document.getElementById('messageContainer');
         const messageEl = document.createElement('div');
