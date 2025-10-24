@@ -1,8 +1,11 @@
-// DigitalClerk Popup with Authentication
+// DigitalClerk Popup with Mock Authentication (No Backend Required)
 class DigitalClerkPopup {
     constructor() {
-        // API Configuration - CHANGE THIS TO YOUR BACKEND URL
-        this.API_URL = 'https://your-api-url.com/api'; // TODO: Replace with your actual API
+        // API Configuration - Will be used when backend is ready
+        this.API_URL = 'https://your-api-url.com/api';
+        
+        // MOCK MODE - Set to false when backend is ready
+        this.MOCK_MODE = true;
         
         this.user = null;
         this.authToken = null;
@@ -111,36 +114,69 @@ class DigitalClerkPopup {
         loginBtn.textContent = 'Logging in...';
 
         try {
-            // Call your backend API
-            const response = await fetch(`${this.API_URL}/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password })
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                // Save auth data
-                this.authToken = data.token;
-                this.user = data.user;
-
-                await chrome.storage.local.set({
-                    authToken: data.token,
-                    user: data.user
-                });
-
-                this.showMessage('Login successful!', 'success');
-                setTimeout(() => this.showMainScreen(), 1000);
+            if (this.MOCK_MODE) {
+                // MOCK AUTHENTICATION - Remove this when backend is ready
+                await this.mockLogin(email, password);
             } else {
-                this.showMessage(data.message || 'Login failed', 'error');
+                // REAL API CALL - Use this when backend is ready
+                await this.realLogin(email, password);
             }
         } catch (error) {
             console.error('Login error:', error);
-            this.showMessage('Network error. Please try again.', 'error');
+            this.showMessage('Login failed. Please try again.', 'error');
         } finally {
             loginBtn.disabled = false;
             loginBtn.textContent = 'Login';
+        }
+    }
+
+    async mockLogin(email, password) {
+        // Simulate API delay
+        await this.sleep(1000);
+
+        // Check if user exists in storage
+        const result = await chrome.storage.local.get(['mockUsers']);
+        const users = result.mockUsers || {};
+
+        if (users[email] && users[email].password === password) {
+            // Login successful
+            this.authToken = 'mock_token_' + Date.now();
+            this.user = users[email];
+
+            await chrome.storage.local.set({
+                authToken: this.authToken,
+                user: this.user
+            });
+
+            this.showMessage('Login successful!', 'success');
+            setTimeout(() => this.showMainScreen(), 1000);
+        } else {
+            this.showMessage('Invalid email or password', 'error');
+        }
+    }
+
+    async realLogin(email, password) {
+        const response = await fetch(`${this.API_URL}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            this.authToken = data.token;
+            this.user = data.user;
+
+            await chrome.storage.local.set({
+                authToken: data.token,
+                user: data.user
+            });
+
+            this.showMessage('Login successful!', 'success');
+            setTimeout(() => this.showMainScreen(), 1000);
+        } else {
+            this.showMessage(data.message || 'Login failed', 'error');
         }
     }
 
@@ -164,39 +200,92 @@ class DigitalClerkPopup {
         signupBtn.textContent = 'Creating account...';
 
         try {
-            const response = await fetch(`${this.API_URL}/auth/signup`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    companyName: company,
-                    email,
-                    password,
-                    plan: 'FREE' // Default plan
-                })
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.authToken = data.token;
-                this.user = data.user;
-
-                await chrome.storage.local.set({
-                    authToken: data.token,
-                    user: data.user
-                });
-
-                this.showMessage('Account created successfully!', 'success');
-                setTimeout(() => this.showMainScreen(), 1000);
+            if (this.MOCK_MODE) {
+                // MOCK SIGNUP
+                await this.mockSignup(company, email, password);
             } else {
-                this.showMessage(data.message || 'Signup failed', 'error');
+                // REAL API CALL
+                await this.realSignup(company, email, password);
             }
         } catch (error) {
             console.error('Signup error:', error);
-            this.showMessage('Network error. Please try again.', 'error');
+            this.showMessage('Signup failed. Please try again.', 'error');
         } finally {
             signupBtn.disabled = false;
             signupBtn.textContent = 'Create Account';
+        }
+    }
+
+    async mockSignup(company, email, password) {
+        // Simulate API delay
+        await this.sleep(1000);
+
+        // Check if user already exists
+        const result = await chrome.storage.local.get(['mockUsers']);
+        const users = result.mockUsers || {};
+
+        if (users[email]) {
+            this.showMessage('Email already exists', 'error');
+            return;
+        }
+
+        // Create new user
+        const newUser = {
+            companyName: company,
+            email: email,
+            password: password, // In real app, this would be hashed on backend
+            plan: 'STARTER',
+            monthlyLimit: 200,
+            documentsUsed: 0,
+            createdAt: new Date().toISOString()
+        };
+
+        users[email] = newUser;
+
+        await chrome.storage.local.set({
+            mockUsers: users
+        });
+
+        // Auto login
+        this.authToken = 'mock_token_' + Date.now();
+        this.user = newUser;
+
+        await chrome.storage.local.set({
+            authToken: this.authToken,
+            user: this.user
+        });
+
+        this.showMessage('Account created successfully!', 'success');
+        setTimeout(() => this.showMainScreen(), 1000);
+    }
+
+    async realSignup(company, email, password) {
+        const response = await fetch(`${this.API_URL}/auth/signup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                companyName: company,
+                email,
+                password,
+                plan: 'STARTER'
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            this.authToken = data.token;
+            this.user = data.user;
+
+            await chrome.storage.local.set({
+                authToken: data.token,
+                user: data.user
+            });
+
+            this.showMessage('Account created successfully!', 'success');
+            setTimeout(() => this.showMainScreen(), 1000);
+        } else {
+            this.showMessage(data.message || 'Signup failed', 'error');
         }
     }
 
@@ -236,7 +325,7 @@ class DigitalClerkPopup {
     }
 
     showQuickFillSection() {
-        // Check usage limit before allowing upload
+        // Check usage limit
         if (this.user && this.user.documentsUsed >= this.user.monthlyLimit) {
             this.showMessage('Monthly limit exceeded! Please upgrade your plan.', 'error');
             document.getElementById('limitWarning').style.display = 'block';
@@ -255,10 +344,10 @@ class DigitalClerkPopup {
         if (!this.user) return;
 
         document.getElementById('userName').textContent = this.user.companyName || this.user.email;
-        document.getElementById('userPlan').textContent = this.user.plan || 'FREE PLAN';
+        document.getElementById('userPlan').textContent = this.user.plan || 'STARTER PLAN';
         
         const used = this.user.documentsUsed || 0;
-        const limit = this.user.monthlyLimit || 10;
+        const limit = this.user.monthlyLimit || 200;
         const percentage = (used / limit) * 100;
 
         document.getElementById('usageCount').textContent = used;
@@ -268,7 +357,6 @@ class DigitalClerkPopup {
         // Show warning if limit reached
         if (used >= limit) {
             document.getElementById('limitWarning').style.display = 'block';
-            document.getElementById('usageFill').style.background = 'linear-gradient
             document.getElementById('usageFill').style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
         } else {
             document.getElementById('limitWarning').style.display = 'none';
@@ -277,7 +365,7 @@ class DigitalClerkPopup {
 
     openUpgradePage() {
         chrome.tabs.create({
-            url: 'https://digitalclerk.app/pricing' // TODO: Change to your pricing page
+            url: 'https://digitalclerk.app/pricing'
         });
     }
 
@@ -311,7 +399,7 @@ class DigitalClerkPopup {
     }
 
     async processFiles(files) {
-        // Check limit before processing
+        // Check limit
         if (this.user.documentsUsed >= this.user.monthlyLimit) {
             this.showMessage('Monthly limit exceeded!', 'error');
             return;
@@ -327,7 +415,6 @@ class DigitalClerkPopup {
             return;
         }
 
-        // Check if adding these files would exceed limit
         const remainingLimit = this.user.monthlyLimit - this.user.documentsUsed;
         if (validFiles.length > remainingLimit) {
             this.showMessage(`You can only upload ${remainingLimit} more document(s) this month`, 'error');
@@ -350,7 +437,6 @@ class DigitalClerkPopup {
             uploadDate: new Date().toISOString()
         };
 
-        // Read file content
         const content = await this.readFileAsBase64(file);
         document.content = content;
 
@@ -412,14 +498,21 @@ class DigitalClerkPopup {
         doneBtn.textContent = 'Processing...';
 
         try {
-            // Send documents to backend for extraction
-            const extractedData = await this.extractDocuments();
+            let extractedData;
+
+            if (this.MOCK_MODE) {
+                // MOCK EXTRACTION
+                extractedData = await this.mockExtractDocuments();
+            } else {
+                // REAL API CALL
+                extractedData = await this.realExtractDocuments();
+            }
 
             if (extractedData) {
                 // Update usage count
                 await this.updateUsageCount(this.uploadedDocuments.length);
 
-                // Send to content script to fill form
+                // Send to content script
                 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
                 
                 await chrome.tabs.sendMessage(tab.id, {
@@ -429,11 +522,8 @@ class DigitalClerkPopup {
 
                 this.showMessage('Form filled successfully! ✓', 'success');
                 
-                // Clear uploaded documents
                 this.uploadedDocuments = [];
                 this.updateDocumentList();
-
-                // Update user info
                 this.updateUserInfo();
 
                 setTimeout(() => {
@@ -449,61 +539,67 @@ class DigitalClerkPopup {
         }
     }
 
-    async extractDocuments() {
-        try {
-            // Call your backend API for OCR extraction
-            const response = await fetch(`${this.API_URL}/extract`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.authToken}`
-                },
-                body: JSON.stringify({
-                    documents: this.uploadedDocuments
-                })
-            });
+    async mockExtractDocuments() {
+        // Simulate processing delay
+        await this.sleep(2000);
 
-            const result = await response.json();
+        // Return mock extracted data
+        return {
+            name: 'Ankit Aphulari',
+            email: 'ankit@example.com',
+            phone: '9876543210',
+            address: 'Latur, Maharashtra, India',
+            pan: 'ABCDE1234F',
+            aadhaar: '1234567890'
+        };
+    }
 
-            if (result.success) {
-                return result.data; // Extracted data from documents
-            } else if (result.error === 'LIMIT_EXCEEDED') {
-                this.showMessage('Monthly limit exceeded!', 'error');
-                document.getElementById('limitWarning').style.display = 'block';
-                return null;
-            } else {
-                throw new Error(result.message);
-            }
-        } catch (error) {
-            console.error('Extraction error:', error);
-            throw error;
+    async realExtractDocuments() {
+        const response = await fetch(`${this.API_URL}/extract`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.authToken}`
+            },
+            body: JSON.stringify({
+                documents: this.uploadedDocuments
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            return result.data;
+        } else if (result.error === 'LIMIT_EXCEEDED') {
+            this.showMessage('Monthly limit exceeded!', 'error');
+            return null;
+        } else {
+            throw new Error(result.message);
         }
     }
 
     async updateUsageCount(count) {
-        try {
-            // Update usage on backend
-            const response = await fetch(`${this.API_URL}/usage/increment`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.authToken}`
-                },
-                body: JSON.stringify({ count })
-            });
+        // Update usage locally
+        this.user.documentsUsed = (this.user.documentsUsed || 0) + count;
 
-            const result = await response.json();
+        await chrome.storage.local.set({
+            user: this.user
+        });
 
-            if (result.success) {
-                // Update local user data
-                this.user.documentsUsed = result.newUsageCount;
-                
-                await chrome.storage.local.set({
-                    user: this.user
+        if (!this.MOCK_MODE) {
+            // Also update on backend
+            try {
+                await fetch(`${this.API_URL}/usage/increment`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.authToken}`
+                    },
+                    body: JSON.stringify({ count })
                 });
+            } catch (error) {
+                console.error('Usage update error:', error);
             }
-        } catch (error) {
-            console.error('Usage update error:', error);
         }
     }
 
@@ -533,6 +629,10 @@ class DigitalClerkPopup {
         const sizes = ['Bytes', 'KB', 'MB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 }
 
