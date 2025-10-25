@@ -1,6 +1,7 @@
 // Enhanced Document AI OCR Service with Google Cloud Vision API
 // Complete implementation with real OCR
 
+import { GOOGLE_VISION_CONFIG } from '../config/vision-config';
 import vision from '@google-cloud/vision';
 import { UniversalDocumentProcessor, UniversalProcessingResult, ProcessingOptions } from './UniversalDocumentProcessor';
 import { intelligentExtraction } from './IntelligentExtraction';
