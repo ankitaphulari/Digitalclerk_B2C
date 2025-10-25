@@ -1,4 +1,4 @@
-// Enhanced OCR with Universal AI Processing
+// Enhanced OCR with Google Cloud Vision API
 import { EnhancedDocumentAIOCRService } from './EnhancedDocumentAIOCRService';
 
 export interface PerformOCRResult {
@@ -18,7 +18,7 @@ export interface PerformOCRResult {
 }
 
 /**
- * Enhanced OCR function with Universal AI processing capabilities
+ * Enhanced OCR function with Google Cloud Vision API
  * Now supports any document type with intelligent field extraction
  */
 export async function performOCR(
@@ -26,8 +26,9 @@ export async function performOCR(
   hintDocType: string = 'auto',
   targetLanguage: string = 'en'
 ): Promise<PerformOCRResult> {
-  console.log('🔍 Starting enhanced OCR with Universal AI...', {
+  console.log('🔍 Starting Google Vision OCR...', {
     fileName: file.name,
+    fileSize: `${(file.size / 1024).toFixed(2)} KB`,
     hintDocType,
     targetLanguage
   });
@@ -70,16 +71,17 @@ export async function performOCR(
       qualityScore: result.qualityScore
     };
 
-    console.log('✅ Enhanced OCR completed successfully:', {
+    console.log('✅ Google Vision OCR completed successfully:', {
       documentType: performOCRResult.documentType,
-      confidence: result.overallConfidence,
-      fieldsExtracted: Object.keys(result.extractedFields).length
+      confidence: `${Math.round(result.overallConfidence * 100)}%`,
+      fieldsExtracted: Object.keys(result.extractedFields).length,
+      textLength: result.text.length
     });
 
     return performOCRResult;
-
+    
   } catch (error) {
-    console.error('❌ Enhanced OCR failed:', error);
+    console.error('❌ Google Vision OCR failed:', error);
     
     // Return error result in expected format
     return {
@@ -98,4 +100,58 @@ export async function performOCR(
       qualityScore: 0.1
     };
   }
+}
+
+/**
+ * Quick OCR for simple text extraction (no processing)
+ */
+export async function quickOCR(file: File): Promise<string> {
+  try {
+    return await EnhancedDocumentAIOCRService.extractTextFromImage(
+      Buffer.from(await file.arrayBuffer())
+    );
+  } catch (error) {
+    console.error('Quick OCR failed:', error);
+    return '';
+  }
+}
+
+/**
+ * Batch OCR processing for multiple documents
+ */
+export async function batchOCR(
+  files: File[],
+  onProgress?: (current: number, total: number, fileName: string) => void
+): Promise<PerformOCRResult[]> {
+  console.log(`📚 Starting batch OCR for ${files.length} documents...`);
+  
+  const results: PerformOCRResult[] = [];
+  
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    
+    if (onProgress) {
+      onProgress(i + 1, files.length, file.name);
+    }
+    
+    try {
+      const result = await performOCR(file);
+      results.push(result);
+    } catch (error) {
+      console.error(`Failed to process ${file.name}:`, error);
+      results.push({
+        text: '',
+        confidence: 0,
+        extracted: {
+          text: '',
+          confidence: 0,
+          error: `Failed to process: ${error instanceof Error ? error.message : 'Unknown error'}`
+        }
+      });
+    }
+  }
+  
+  console.log(`✅ Batch OCR completed: ${results.filter(r => r.confidence > 0.5).length}/${files.length} successful`);
+  
+  return results;
 }
