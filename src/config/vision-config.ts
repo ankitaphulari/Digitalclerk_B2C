@@ -1,27 +1,22 @@
 // Google Cloud Vision API Configuration
 // For DigitalClerk OCR Service
+// SECURITY: API key is loaded from environment variables
 
 export const GOOGLE_VISION_CONFIG = {
-  // Your Google Vision API Key
-  apiKey: 'AIzaSyDMqFu3DCMFo-q1_BCxhlzXJQP-OQRQxXM',
+  // Load API key from environment variable (NEVER hardcode it!)
+  apiKey: process.env.GOOGLE_VISION_API_KEY || '',
   
-  // Alternative: Service Account Credentials (more secure for production)
-  // If you have a JSON key file, use this instead:
-  /*
-  credentials: {
-    type: 'service_account',
-    project_id: 'your-project-id',
-    private_key_id: 'key-id',
-    private_key: '-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n',
-    client_email: 'vision-api@your-project.iam.gserviceaccount.com',
-    client_id: 'client-id',
-    auth_uri: 'https://accounts.google.com/o/oauth2/auth',
-    token_uri: 'https://oauth2.googleapis.com/token',
-    auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
-    client_x509_cert_url: 'https://www.googleapis.com/robot/v1/metadata/x509/...'
-  }
-  */
+  // Project ID (optional)
+  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID || '',
 };
+
+// Validate configuration on startup
+if (!GOOGLE_VISION_CONFIG.apiKey) {
+  throw new Error(
+    '❌ GOOGLE_VISION_API_KEY is not set in environment variables. ' +
+    'Please add it to your .env file or deployment environment.'
+  );
+}
 
 // OCR Processing Options
 export const OCR_OPTIONS = {
