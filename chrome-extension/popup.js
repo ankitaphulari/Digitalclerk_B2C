@@ -1,8 +1,9 @@
-// DigitalClerk Extension - Login Only (No Signup)
+// DigitalClerk Extension - Updated Version
 class DigitalClerkPopup {
     constructor() {
         // API Configuration - CHANGE THIS TO YOUR BACKEND URL
-        this.API_URL = 'https://your-api-url.com/api'; // TODO: Replace with your actual API
+        this.API_URL = 'https://api.digitalclerk.app/api'; // TODO: Replace with your actual API
+        // For local development: 'http://localhost:5000/api'
         
         // MOCK MODE - Set to false when backend is ready
         this.MOCK_MODE = true;
@@ -28,7 +29,16 @@ class DigitalClerkPopup {
                 this.authToken = result.authToken;
                 this.user = result.user;
                 
-                // Verify subscription status
+                // Verify token with backend (if not in mock mode)
+                if (!this.MOCK_MODE) {
+                    const isValid = await this.verifyToken();
+                    if (!isValid) {
+                        await this.handleLogout();
+                        return;
+                    }
+                }
+                
+                // Check subscription status
                 if (this.user.subscriptionStatus === 'EXPIRED') {
                     this.showMainScreen();
                     this.showExpiredWarning();
@@ -46,11 +56,30 @@ class DigitalClerkPopup {
         this.hideLoading();
     }
 
+    async verifyToken() {
+        try {
+            const response = await fetch(`${this.API_URL}/auth/verify`, {
+                headers: {
+                    'Authorization': `Bearer ${this.authToken}`
+                }
+            });
+            const data = await response.json();
+            return data.valid;
+        } catch (error) {
+            console.error('Token verification error:', error);
+            return false;
+        }
+    }
+
     setupEventListeners() {
         // Auth buttons
         document.getElementById('loginBtn').addEventListener('click', () => this.handleLogin());
 
         // Enter key for login
+        document.getElementById('loginEmail').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') document.getElementById('loginPassword').focus();
+        });
+        
         document.getElementById('loginPassword').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.handleLogin();
         });
@@ -87,16 +116,20 @@ class DigitalClerkPopup {
             return;
         }
 
+        // Basic email validation
+        if (!this.isValidEmail(email)) {
+            this.showMessage('Please enter a valid email', 'error');
+            return;
+        }
+
         const loginBtn = document.getElementById('loginBtn');
         loginBtn.disabled = true;
         loginBtn.textContent = 'Logging in...';
 
         try {
             if (this.MOCK_MODE) {
-                // MOCK AUTHENTICATION - Remove when backend is ready
                 await this.mockLogin(email, password);
             } else {
-                // REAL API CALL
                 await this.realLogin(email, password);
             }
         } catch (error) {
@@ -112,22 +145,23 @@ class DigitalClerkPopup {
         // Simulate API delay
         await this.sleep(1000);
 
-        // For testing, create a mock account
-        const mockUser = {
-            companyName: 'Test Company',
-            email: email,
-            phone: '9876543210',
-            location: 'Mumbai, Maharashtra',
-            plan: 'PROFESSIONAL',
-            monthlyLimit: 1000,
-            documentsUsed: 45,
-            subscriptionStatus: 'ACTIVE', // ACTIVE, EXPIRED, CANCELLED
-            subscriptionEndsAt: '2025-12-31',
-            createdAt: new Date().toISOString()
-        };
-
-        // Simple mock validation
+        // For testing - accepts any email/password with length >= 6
         if (password.length >= 6) {
+            const mockUser = {
+                id: 'mock_user_' + Date.now(),
+                companyName: 'ABC CA Firm',
+                email: email,
+                phone: '9876543210',
+                location: 'Mumbai, Maharashtra',
+                plan: 'PROFESSIONAL',
+                planPrice: 1999,
+                monthlyLimit: 1000,
+                documentsUsed: 45,
+                subscriptionStatus: 'ACTIVE', // ACTIVE, EXPIRED, CANCELLED
+                subscriptionEndsAt: '2025-12-31',
+                createdAt: new Date().toISOString()
+            };
+
             this.authToken = 'mock_token_' + Date.now();
             this.user = mockUser;
 
@@ -139,7 +173,7 @@ class DigitalClerkPopup {
             this.showMessage('Login successful!', 'success');
             setTimeout(() => this.showMainScreen(), 1000);
         } else {
-            this.showMessage('Invalid email or password', 'error');
+            this.showMessage('Invalid credentials. Password must be at least 6 characters.', 'error');
         }
     }
 
@@ -150,13 +184,16 @@ class DigitalClerkPopup {
             body: JSON.stringify({ email, password })
         });
 
+        if (!response.ok) {
+            throw new Error('Login failed');
+        }
+
         const data = await response.json();
 
         if (data.success) {
             // Check subscription status
             if (data.user.subscriptionStatus === 'EXPIRED') {
                 this.showMessage('Your subscription has expired. Please renew.', 'warning');
-                // Still allow login but show expired warning
             } else if (data.user.subscriptionStatus === 'CANCELLED') {
                 this.showMessage('Your account has been cancelled. Please contact support.', 'error');
                 return;
@@ -196,6 +233,10 @@ class DigitalClerkPopup {
         document.getElementById('authScreen').classList.remove('hidden');
         document.getElementById('mainScreen').classList.remove('active');
         document.getElementById('quickFillSection').classList.remove('active');
+        
+        // Clear input fields
+        document.getElementById('loginEmail').value = '';
+        document.getElementById('loginPassword').value = '';
     }
 
     showMainScreen() {
@@ -243,12 +284,16 @@ class DigitalClerkPopup {
         if (!this.user) return;
 
         document.getElementById('userName').textContent = this.user.companyName || this.user.email;
-        document.getElementById('userPlan').textContent = this.user.plan || 'STARTER PLAN';
+        document.getElementById('userPlan').textContent = this.user.plan + ' PLAN' || 'STARTER PLAN';
         
         // Show subscription end date
         if (this.user.subscriptionEndsAt) {
             const endDate = new Date(this.user.subscriptionEndsAt);
-            document.getElementById('subscriptionEndDate').textContent = endDate.toLocaleDateString('en-IN');
+            document.getElementById('subscriptionEndDate').textContent = endDate.toLocaleDateString('en-IN', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
         }
         
         const used = this.user.documentsUsed || 0;
@@ -259,10 +304,19 @@ class DigitalClerkPopup {
         document.getElementById('usageLimit').textContent = limit;
         document.getElementById('usageFill').style.width = `${Math.min(percentage, 100)}%`;
 
+        // Change color based on usage
+        const usageFill = document.getElementById('usageFill');
+        if (percentage >= 90) {
+            usageFill.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+        } else if (percentage >= 70) {
+            usageFill.style.background = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+        } else {
+            usageFill.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+        }
+
         // Show warning if limit reached
         if (used >= limit) {
             document.getElementById('limitWarning').style.display = 'block';
-            document.getElementById('usageFill').style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
         } else {
             document.getElementById('limitWarning').style.display = 'none';
         }
@@ -281,7 +335,7 @@ class DigitalClerkPopup {
 
     openRenewPage() {
         chrome.tabs.create({
-            url: 'https://digitalclerk.app/renew'
+            url: 'https://digitalclerk.app/dashboard'
         });
     }
 
@@ -343,6 +397,12 @@ class DigitalClerkPopup {
             return;
         }
 
+        // Limit to 5 documents at once
+        if (validFiles.length > 5) {
+            this.showMessage('You can upload maximum 5 documents at once', 'warning');
+            return;
+        }
+
         for (const file of validFiles) {
             await this.uploadFile(file);
         }
@@ -351,6 +411,13 @@ class DigitalClerkPopup {
     }
 
     async uploadFile(file) {
+        // Check file size (max 10MB)
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        if (file.size > maxSize) {
+            this.showMessage(`${file.name} is too large. Max size is 10MB.`, 'error');
+            return;
+        }
+
         const document = {
             id: this.generateId(),
             name: file.name,
@@ -381,15 +448,18 @@ class DigitalClerkPopup {
         
         if (this.uploadedDocuments.length === 0) {
             listContainer.innerHTML = '<div class="empty-state">No documents uploaded</div>';
+            document.getElementById('doneBtn').disabled = true;
             return;
         }
 
+        document.getElementById('doneBtn').disabled = false;
         listContainer.innerHTML = '';
+        
         this.uploadedDocuments.forEach(doc => {
             const item = document.createElement('div');
             item.className = 'document-item';
             item.innerHTML = `
-                <div class="document-name">${doc.name}</div>
+                <div class="document-name" title="${doc.name}">${doc.name}</div>
                 <button class="btn-delete" data-id="${doc.id}">Delete</button>
             `;
             
@@ -421,6 +491,13 @@ class DigitalClerkPopup {
             return;
         }
 
+        // Check if we're on a valid page
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab || !tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+            this.showMessage('Please navigate to a form page first', 'warning');
+            return;
+        }
+
         const doneBtn = document.getElementById('doneBtn');
         doneBtn.disabled = true;
         doneBtn.textContent = 'Processing...';
@@ -429,10 +506,8 @@ class DigitalClerkPopup {
             let extractedData;
 
             if (this.MOCK_MODE) {
-                // MOCK EXTRACTION
                 extractedData = await this.mockExtractDocuments();
             } else {
-                // REAL API CALL
                 extractedData = await this.realExtractDocuments();
             }
 
@@ -441,14 +516,17 @@ class DigitalClerkPopup {
                 await this.updateUsageCount(this.uploadedDocuments.length);
 
                 // Send to content script
-                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-                
-                await chrome.tabs.sendMessage(tab.id, {
-                    action: 'fillForm',
-                    data: extractedData
-                });
+                try {
+                    await chrome.tabs.sendMessage(tab.id, {
+                        action: 'fillForm',
+                        data: extractedData
+                    });
 
-                this.showMessage('Form filled successfully! ✓', 'success');
+                    this.showMessage('Form filled successfully! ✓', 'success');
+                } catch (error) {
+                    console.error('Content script error:', error);
+                    this.showMessage('Could not fill form. Please refresh the page and try again.', 'error');
+                }
                 
                 this.uploadedDocuments = [];
                 this.updateDocumentList();
@@ -456,12 +534,11 @@ class DigitalClerkPopup {
 
                 setTimeout(() => {
                     this.showMainMenu();
-                }, 1500);
+                }, 2000);
             }
         } catch (error) {
             console.error('Processing error:', error);
             
-            // Check if error is due to subscription
             if (error.message.includes('SUBSCRIPTION_EXPIRED')) {
                 this.showMessage('Your subscription has expired', 'error');
                 this.showExpiredWarning();
@@ -475,31 +552,47 @@ class DigitalClerkPopup {
     }
 
     async mockExtractDocuments() {
-        // Simulate processing delay
         await this.sleep(2000);
 
-        // Return mock extracted data
         return {
-            name: 'Ankit Aphulari',
+            name: 'Ankit Taphulari',
             email: 'ankit@example.com',
             phone: '9876543210',
-            address: 'Latur, Maharashtra, India',
+            mobile: '9876543210',
+            contact: '9876543210',
+            address: '123 Main Street, Latur',
+            city: 'Latur',
+            state: 'Maharashtra',
+            pincode: '413512',
             pan: 'ABCDE1234F',
-            aadhaar: '123456789012'
+            aadhaar: '1234 5678 9012',
+            dob: '01/01/1990',
+            dateofbirth: '01-01-1990',
+            gender: 'Male',
+            fathername: 'Father Name',
+            mothername: 'Mother Name'
         };
     }
 
     async realExtractDocuments() {
-        const response = await fetch(`${this.API_URL}/extract`, {
+        const response = await fetch(`${this.API_URL}/document/extract`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${this.authToken}`
             },
             body: JSON.stringify({
-                documents: this.uploadedDocuments
+                documents: this.uploadedDocuments.map(doc => ({
+                    name: doc.name,
+                    type: doc.type,
+                    content: doc.content
+                }))
             })
         });
+
+        if (!response.ok) {
+            throw new Error('Extraction failed');
+        }
 
         const result = await response.json();
 
@@ -516,7 +609,6 @@ class DigitalClerkPopup {
     }
 
     async updateUsageCount(count) {
-        // Update usage locally
         this.user.documentsUsed = (this.user.documentsUsed || 0) + count;
 
         await chrome.storage.local.set({
@@ -524,7 +616,6 @@ class DigitalClerkPopup {
         });
 
         if (!this.MOCK_MODE) {
-            // Also update on backend
             try {
                 const response = await fetch(`${this.API_URL}/usage/increment`, {
                     method: 'POST',
@@ -538,7 +629,6 @@ class DigitalClerkPopup {
                 const result = await response.json();
                 
                 if (result.success) {
-                    // Update local user data with backend response
                     this.user.documentsUsed = result.newUsageCount;
                     await chrome.storage.local.set({
                         user: this.user
@@ -564,6 +654,10 @@ class DigitalClerkPopup {
         setTimeout(() => {
             messageEl.remove();
         }, 3000);
+    }
+
+    isValidEmail(email) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
     }
 
     generateId() {
