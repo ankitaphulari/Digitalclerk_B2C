@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "DigitalClerk - Smart Form Filler",
   "version": "1.0.0",
-  "description": "Auto-fill government forms using data extracted from uploaded documents",
+  "description": "Fill Indian government forms in 15 seconds with AI-powered data extraction",
   
   "permissions": [
     "activeTab",
@@ -53,6 +53,9 @@
       "js": [
         "content.js"
       ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_end",
       "all_frames": false
     }
@@ -65,13 +68,21 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "content.js"
+        "content.js",
+        "icon16.png",
+        "icon32.png",
+        "icon48.png",
+        "icon128.png"
       ],
       "matches": [
         "<all_urls>"
       ]
     }
   ],
+  
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
   
   "author": "DigitalClerk Team",
   "homepage_url": "https://digitalclerk.app"
