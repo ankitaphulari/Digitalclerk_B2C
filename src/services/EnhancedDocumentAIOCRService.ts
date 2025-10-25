@@ -1,5 +1,5 @@
 // Enhanced Document AI OCR Service with Google Cloud Vision API
-// Complete implementation with real OCR
+// SECURE VERSION - Uses environment variables
 
 import { GOOGLE_VISION_CONFIG } from '../config/vision-config';
 import vision from '@google-cloud/vision';
@@ -44,22 +44,10 @@ export interface ProcessingConfig {
 
 export class EnhancedDocumentAIOCRService {
   
-  // Google Cloud Vision API client with your API key
+  // Google Cloud Vision API client - SECURE: loads from environment
   private static visionClient = new vision.ImageAnnotatorClient({
-    credentials: {
-      type: 'service_account',
-      project_id: 'digitalclerk',
-      private_key_id: 'key-id',
-      private_key: '-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY\n-----END PRIVATE KEY-----\n',
-      client_email: 'vision-api@digitalclerk.iam.gserviceaccount.com',
-      client_id: 'client-id',
-      auth_uri: 'https://accounts.google.com/o/oauth2/auth',
-      token_uri: 'https://oauth2.googleapis.com/token',
-      auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
-      client_x509_cert_url: 'https://www.googleapis.com/robot/v1/metadata/x509/...'
-    },
-    // Alternative: Use API Key directly (simpler but less secure)
-    apiKey: 'AIzaSyDMqFu3DCMFo-q1_BCxhlzXJQP-OQRQxXM'
+    // Load API key from environment variable (via vision-config)
+    apiKey: GOOGLE_VISION_CONFIG.apiKey
   });
   
   /**
