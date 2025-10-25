@@ -17,14 +17,18 @@ import DrivingForm from "./pages/DrivingForm";
 import ScholarshipForm from "./pages/ScholarshipForm";
 import GSTForm from "./pages/GSTForm";
 import DocumentCollection from "./pages/DocumentCollection";
-import IntelligentFormAutomation from "./pages/IntelligentFormAutomation";
-import AdvancedFeatures from "./pages/AdvancedFeatures";
 import TemplateCreator from "./pages/TemplateCreator";
 import ProfileDatabase from "./pages/ProfileDatabase";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import FormLinksPage from "./components/FormLinksPage";
-import EnhancedOCRDemo from "./pages/EnhancedOCRDemo";
 import GoogleTranslate from "./components/GoogleTranslator";
+
+// New pages for business workflow
+import Homepage from "./pages/Homepage";
+import BusinessSignup from "./pages/BusinessSignup";
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import Pricing from "./pages/Pricing";
 
 const queryClient = new QueryClient();
 
@@ -41,7 +45,15 @@ const App = () => {
                 <GoogleTranslate />
                 <BrowserRouter>
                   <Routes>
-                    <Route path="/" element={<Index />} />
+                    {/* Main Website Routes */}
+                    <Route path="/" element={<Homepage />} />
+                    <Route path="/signup" element={<BusinessSignup />} />
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/pricing" element={<Pricing />} />
+                    <Route path="/dashboard" element={<Dashboard />} />
+
+                    {/* Legacy/Demo Routes */}
+                    <Route path="/demo" element={<Index />} />
                     <Route path="/auth" element={<Auth />} />
                     <Route path="/aadhaar" element={<AadhaarForm />} />
                     <Route path="/pan" element={<PANForm />} />
@@ -51,18 +63,6 @@ const App = () => {
                     <Route path="/gst" element={<GSTForm />} />
                     <Route path="/documents" element={<DocumentCollection />} />
                     <Route
-                      path="/intelligent-automation"
-                      element={<IntelligentFormAutomation />}
-                    />
-                    <Route
-                      path="/intelligent-automation/:formType"
-                      element={<IntelligentFormAutomation />}
-                    />
-                    <Route
-                      path="/advanced-features"
-                      element={<AdvancedFeatures />}
-                    />
-                    <Route
                       path="/template-creator/:templateType"
                       element={<TemplateCreator />}
                     />
@@ -71,15 +71,11 @@ const App = () => {
                       element={<ProfileDatabase />}
                     />
                     <Route path="/analytics" element={<AnalyticsPage />} />
-                    <Route path="/enhanced-ocr" element={<EnhancedOCRDemo />} />
 
-                    {/* Updated Routes for the new workflow */}
+                    {/* Form Routes */}
                     <Route path="/form/:formType" element={<FormLinksPage />} />
-                    <Route
-                      path="/document-upload/:formType"
-                      element={<EnhancedOCRDemo />}
-                    />
 
+                    {/* 404 Route */}
                     <Route path="*" element={<NotFound />} />
                   </Routes>
                 </BrowserRouter>
