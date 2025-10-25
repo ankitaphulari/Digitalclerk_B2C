@@ -1,5 +1,5 @@
-// Local OCR Service using only Google Cloud Vision API
-// No other third-party AI dependencies
+// Local OCR Service using Google Cloud Vision API directly
+// Updated to use your API key
 
 import { AadhaarExtractor } from './AadhaarExtractor';
 import { PANCardExtractor } from './PANCardExtractor';
@@ -27,6 +27,10 @@ export interface ExtractedField {
 
 export class LocalOCRService {
   private static instance: LocalOCRService;
+  
+  // Your Google Vision API Key
+  private static readonly GOOGLE_VISION_API_KEY = 'AIzaSyDMqFu3DCMFo-q1_BCxhlzXJQP-OQRQxXM';
+  private static readonly GOOGLE_VISION_API_URL = 'https://vision.googleapis.com/v1/images:annotate';
 
   static getInstance(): LocalOCRService {
     if (!LocalOCRService.instance) {
@@ -36,7 +40,7 @@ export class LocalOCRService {
   }
 
   /**
-   * Process document using only Google Vision API for OCR
+   * Process document using Google Vision API for OCR
    * All other processing is done locally with pattern matching
    */
   async processDocument(file: File): Promise<{
@@ -46,10 +50,10 @@ export class LocalOCRService {
     processingTime: number;
   }> {
     const startTime = Date.now();
-    console.log('🔍 Starting local document processing (Google Vision OCR only)...');
+    console.log('🔍 Starting local document processing (Google Vision OCR)...');
 
     try {
-      // Step 1: Extract text using Google Vision API only
+      // Step 1: Extract text using Google Vision API
       const ocrResult = await this.performOCR(file);
       
       // Step 2: Classify document using local pattern matching
@@ -63,7 +67,8 @@ export class LocalOCRService {
       console.log('✅ Local processing completed:', {
         documentType: classification.documentType,
         fieldsExtracted: Object.keys(extractedFields).length,
-        processingTime: `${processingTime}ms`
+        processingTime: `${processingTime}ms`,
+        confidence: classification.confidence
       });
 
       return {
@@ -80,38 +85,135 @@ export class LocalOCRService {
   }
 
   /**
-   * Use Google Vision API for OCR only
+   * Use Google Vision API directly with your API key
    */
   private async performOCR(file: File): Promise<OCRResult> {
     const base64 = await this.fileToBase64(file);
     
     try {
-      // Use Supabase edge function for Vision API
-      const response = await fetch('https://mftzlxhtghtmwvtxgbki.supabase.co/functions/v1/vision-ocr-proxy', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mdHpseGh0Z2h0bXd2dHhnYmtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM2MTU1NzcsImV4cCI6MjA2OTE5MTU3N30.XbASqLF8wL_vno0iWQpSRl8abgziUg2xCettKJ_Cnr0`
-        },
-        body: JSON.stringify({
-          imageBase64: base64
-        })
-      });
+      console.log('📡 Calling Google Vision API...');
+      
+      // Call Google Vision API directly
+      const response = await fetch(
+        `${LocalOCRService.GOOGLE_VISION_API_URL}?key=${LocalOCRService.GOOGLE_VISION_API_KEY}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            requests: [
+              {
+                image: {
+                  content: base64
+                },
+                features: [
+                  {
+                    type: 'DOCUMENT_TEXT_DETECTION', // Best for documents
+                    maxResults: 1
+                  }
+                ],
+                imageContext: {
+                  languageHints: ['en', 'hi'] // English and Hindi
+                }
+              }
+            ]
+          })
+        }
+      );
 
       if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Vision API error:', errorData);
         throw new Error(`Vision API failed: ${response.statusText}`);
       }
 
       const result = await response.json();
       
+      if (!result.responses || !result.responses[0]) {
+        throw new Error('No response from Vision API');
+      }
+
+      const visionResponse = result.responses[0];
+      
+      // Check for errors
+      if (visionResponse.error) {
+        throw new Error(`Vision API error: ${visionResponse.error.message}`);
+      }
+
+      // Extract text from fullTextAnnotation (most accurate for documents)
+      const fullTextAnnotation = visionResponse.fullTextAnnotation;
+      const textAnnotations = visionResponse.textAnnotations;
+      
+      if (!fullTextAnnotation && (!textAnnotations || textAnnotations.length === 0)) {
+        console.warn('⚠️ No text detected in image');
+        return {
+          text: '',
+          confidence: 0,
+          boundingBoxes: []
+        };
+      }
+
+      // Get full text
+      const text = fullTextAnnotation?.text || textAnnotations?.[0]?.description || '';
+      
+      // Calculate average confidence from pages
+      let confidence = 0.8; // Default
+      if (fullTextAnnotation?.pages) {
+        let totalConfidence = 0;
+        let count = 0;
+        
+        fullTextAnnotation.pages.forEach((page: any) => {
+          page.blocks?.forEach((block: any) => {
+            if (block.confidence) {
+              totalConfidence += block.confidence;
+              count++;
+            }
+          });
+        });
+        
+        if (count > 0) {
+          confidence = totalConfidence / count;
+        }
+      }
+
+      // Extract bounding boxes
+      const boundingBoxes = textAnnotations?.slice(1).map((annotation: any) => ({
+        text: annotation.description,
+        coordinates: {
+          x: annotation.boundingPoly?.vertices?.[0]?.x || 0,
+          y: annotation.boundingPoly?.vertices?.[0]?.y || 0,
+          width: (annotation.boundingPoly?.vertices?.[2]?.x || 0) - (annotation.boundingPoly?.vertices?.[0]?.x || 0),
+          height: (annotation.boundingPoly?.vertices?.[2]?.y || 0) - (annotation.boundingPoly?.vertices?.[0]?.y || 0)
+        }
+      })) || [];
+
+      console.log('✅ Google Vision OCR completed:', {
+        textLength: text.length,
+        confidence: Math.round(confidence * 100) + '%',
+        boundingBoxes: boundingBoxes.length
+      });
+
       return {
-        text: result.text || '',
-        confidence: result.confidence || 0.8,
-        boundingBoxes: result.boundingBoxes || []
+        text,
+        confidence,
+        boundingBoxes
       };
+      
     } catch (error) {
-      console.error('Google Vision API error:', error);
-      throw new Error('OCR processing failed');
+      console.error('❌ Google Vision API error:', error);
+      
+      // Check if it's a quota error
+      if (error instanceof Error && error.message.includes('quota')) {
+        throw new Error('Google Vision API quota exceeded. Please check your API limits.');
+      }
+      
+      // Check if it's an authentication error
+      if (error instanceof Error && error.message.includes('401')) {
+        throw new Error('Google Vision API authentication failed. Please check your API key.');
+      }
+      
+      throw new Error('OCR processing failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   }
 
@@ -126,13 +228,15 @@ export class LocalOCRService {
         /आधार/,
         /\b\d{4}\s\d{4}\s\d{4}\b/, // Aadhaar number pattern
         /unique identification authority/i,
-        /government of india/i
+        /government of india/i,
+        /uidai/i
       ],
       pan: [
         /permanent account number/i,
         /income tax department/i,
         /\b[A-Z]{5}\d{4}[A-Z]{1}\b/, // PAN pattern
-        /pan card/i
+        /pan card/i,
+        /income tax/i
       ],
       passport: [
         /passport/i,
@@ -152,7 +256,14 @@ export class LocalOCRService {
         /voter.*id/i,
         /election commission/i,
         /\b[A-Z]{3}\d{7}\b/, // Voter ID pattern
-        /electoral/i
+        /electoral/i,
+        /epic/i
+      ],
+      gst: [
+        /gstin/i,
+        /goods and services tax/i,
+        /\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}/,
+        /gst certificate/i
       ]
     };
 
@@ -178,6 +289,12 @@ export class LocalOCRService {
 
     const confidence = Math.min(bestMatch.score * 2, 0.95); // Scale confidence
     
+    console.log('🏷️ Document classified:', {
+      type: bestMatch.type,
+      confidence: Math.round(confidence * 100) + '%',
+      matches: bestMatch.matches
+    });
+    
     return {
       documentType: bestMatch.type,
       confidence,
@@ -194,7 +311,8 @@ export class LocalOCRService {
       pan: this.extractPANFields.bind(this),
       passport: this.extractPassportFields.bind(this),
       drivingLicense: this.extractDrivingLicenseFields.bind(this),
-      voterID: this.extractVoterIDFields.bind(this)
+      voterID: this.extractVoterIDFields.bind(this),
+      gst: this.extractGSTFields.bind(this)
     };
 
     const extractor = extractors[documentType as keyof typeof extractors];
@@ -206,7 +324,6 @@ export class LocalOCRService {
     const extracted = AadhaarExtractor.extractFromAadhaarCard(text);
     const fields: Record<string, ExtractedField> = {};
 
-    // Convert AadhaarExtractor results to LocalOCRService format
     if (extracted.aadhaar) {
       fields.aadhaarNumber = {
         value: extracted.aadhaar,
@@ -253,7 +370,7 @@ export class LocalOCRService {
       };
     }
 
-    // Fix gender detection - properly handle "Female" vs "Male"
+    // Fix gender detection
     const genderMatch = text.match(/(?:male|female|पुरुष|महिला)/i);
     if (genderMatch) {
       const matchedText = genderMatch[0].toLowerCase();
@@ -278,11 +395,9 @@ export class LocalOCRService {
   }
 
   private extractPANFields(text: string): Record<string, ExtractedField> {
-    // Use specialized PANCardExtractor for better accuracy
     const extracted = PANCardExtractor.extractFromPANCard(text);
     const fields: Record<string, ExtractedField> = {};
 
-    // Convert PANCardExtractor results to LocalOCRService format
     if (extracted.pan) {
       fields.panNumber = {
         value: extracted.pan,
@@ -321,7 +436,6 @@ export class LocalOCRService {
   private extractPassportFields(text: string): Record<string, ExtractedField> {
     const fields: Record<string, ExtractedField> = {};
 
-    // Passport number
     const passportMatch = text.match(/\b(P\d{7})\b/);
     if (passportMatch) {
       fields.passportNumber = {
@@ -331,7 +445,6 @@ export class LocalOCRService {
       };
     }
 
-    // Name extraction
     const nameMatch = text.match(/(?:given name|surname)[:\s]+([a-zA-Z\s]+)/i);
     if (nameMatch) {
       fields.name = {
@@ -347,7 +460,6 @@ export class LocalOCRService {
   private extractDrivingLicenseFields(text: string): Record<string, ExtractedField> {
     const fields: Record<string, ExtractedField> = {};
 
-    // DL number
     const dlMatch = text.match(/\b([A-Z]{2}\d{2}\s?\d{11})\b/);
     if (dlMatch) {
       fields.dlNumber = {
@@ -363,7 +475,6 @@ export class LocalOCRService {
   private extractVoterIDFields(text: string): Record<string, ExtractedField> {
     const fields: Record<string, ExtractedField> = {};
 
-    // Voter ID number
     const voterMatch = text.match(/\b([A-Z]{3}\d{7})\b/);
     if (voterMatch) {
       fields.voterID = {
@@ -376,27 +487,34 @@ export class LocalOCRService {
     return fields;
   }
 
+  private extractGSTFields(text: string): Record<string, ExtractedField> {
+    const fields: Record<string, ExtractedField> = {};
+
+    const gstMatch = text.match(/\b(\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1})\b/);
+    if (gstMatch) {
+      fields.gstin = {
+        value: gstMatch[1],
+        confidence: 0.95,
+        source: 'pattern'
+      };
+    }
+
+    return fields;
+  }
+
   private extractGenericFields(text: string): Record<string, ExtractedField> {
     const fields: Record<string, ExtractedField> = {};
 
-    // Improved generic name extraction - avoid headers and single words
     const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-    
-    // Find valid name lines (avoid common header patterns)
     const headerBlacklist = ['GOVERNMENT', 'INDIA', 'DEPARTMENT', 'AUTHORITY', 'CARD', 'NUMBER'];
     
     for (const line of lines) {
-      // Must be mostly alphabetic with spaces
       if (!/^[A-Za-z .'-]{3,50}$/.test(line)) continue;
-      
-      // Must have at least one space (multi-word names)
       if (!line.includes(' ')) continue;
       
-      // Exclude obvious headers
       const upperLine = line.toUpperCase();
       if (headerBlacklist.some(header => upperLine.includes(header))) continue;
       
-      // This looks like a valid name
       fields.name = {
         value: line.trim(),
         confidence: 0.6,
@@ -410,11 +528,12 @@ export class LocalOCRService {
 
   private getExpectedFields(documentType: string): string[] {
     const fieldMappings = {
-      aadhaar: ['name', 'aadhaarNumber', 'dateOfBirth', 'gender', 'address'],
+      aadhaar: ['name', 'aadhaarNumber', 'dateOfBirth', 'gender', 'address', 'pincode'],
       pan: ['name', 'panNumber', 'fatherName', 'dateOfBirth'],
       passport: ['name', 'passportNumber', 'dateOfBirth', 'placeOfBirth'],
       drivingLicense: ['name', 'dlNumber', 'dateOfBirth', 'address'],
       voterID: ['name', 'voterID', 'address'],
+      gst: ['gstin', 'businessName', 'address'],
       unknown: ['name']
     };
 
