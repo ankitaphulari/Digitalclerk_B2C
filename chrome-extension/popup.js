@@ -1,8 +1,8 @@
-// DigitalClerk Popup with Mock Authentication (No Backend Required)
+// DigitalClerk Extension - Login Only (No Signup)
 class DigitalClerkPopup {
     constructor() {
-        // API Configuration - Will be used when backend is ready
-        this.API_URL = 'https://your-api-url.com/api';
+        // API Configuration - CHANGE THIS TO YOUR BACKEND URL
+        this.API_URL = 'https://your-api-url.com/api'; // TODO: Replace with your actual API
         
         // MOCK MODE - Set to false when backend is ready
         this.MOCK_MODE = true;
@@ -27,7 +27,14 @@ class DigitalClerkPopup {
             if (result.authToken && result.user) {
                 this.authToken = result.authToken;
                 this.user = result.user;
-                this.showMainScreen();
+                
+                // Verify subscription status
+                if (this.user.subscriptionStatus === 'EXPIRED') {
+                    this.showMainScreen();
+                    this.showExpiredWarning();
+                } else {
+                    this.showMainScreen();
+                }
             } else {
                 this.showAuthScreen();
             }
@@ -40,34 +47,19 @@ class DigitalClerkPopup {
     }
 
     setupEventListeners() {
-        // Auth tab switching
-        document.getElementById('loginTab').addEventListener('click', () => this.showLoginForm());
-        document.getElementById('signupTab').addEventListener('click', () => this.showSignupForm());
-        document.getElementById('switchToSignup').addEventListener('click', (e) => {
-            e.preventDefault();
-            this.showSignupForm();
-        });
-        document.getElementById('switchToLogin').addEventListener('click', (e) => {
-            e.preventDefault();
-            this.showLoginForm();
-        });
-
         // Auth buttons
         document.getElementById('loginBtn').addEventListener('click', () => this.handleLogin());
-        document.getElementById('signupBtn').addEventListener('click', () => this.handleSignup());
 
-        // Enter key for forms
+        // Enter key for login
         document.getElementById('loginPassword').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.handleLogin();
-        });
-        document.getElementById('signupPassword').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.handleSignup();
         });
 
         // Main menu buttons
         document.getElementById('quickFillBtn').addEventListener('click', () => this.showQuickFillSection());
         document.getElementById('logoutBtn').addEventListener('click', () => this.handleLogout());
         document.getElementById('upgradeLink').addEventListener('click', () => this.openUpgradePage());
+        document.getElementById('renewBtn').addEventListener('click', () => this.openRenewPage());
 
         // Quick fill section
         const uploadArea = document.getElementById('uploadArea');
@@ -86,20 +78,6 @@ class DigitalClerkPopup {
 
     // ==================== AUTH METHODS ====================
 
-    showLoginForm() {
-        document.getElementById('loginTab').classList.add('active');
-        document.getElementById('signupTab').classList.remove('active');
-        document.getElementById('loginForm').style.display = 'block';
-        document.getElementById('signupForm').style.display = 'none';
-    }
-
-    showSignupForm() {
-        document.getElementById('signupTab').classList.add('active');
-        document.getElementById('loginTab').classList.remove('active');
-        document.getElementById('signupForm').style.display = 'block';
-        document.getElementById('loginForm').style.display = 'none';
-    }
-
     async handleLogin() {
         const email = document.getElementById('loginEmail').value.trim();
         const password = document.getElementById('loginPassword').value;
@@ -115,10 +93,10 @@ class DigitalClerkPopup {
 
         try {
             if (this.MOCK_MODE) {
-                // MOCK AUTHENTICATION - Remove this when backend is ready
+                // MOCK AUTHENTICATION - Remove when backend is ready
                 await this.mockLogin(email, password);
             } else {
-                // REAL API CALL - Use this when backend is ready
+                // REAL API CALL
                 await this.realLogin(email, password);
             }
         } catch (error) {
@@ -134,14 +112,24 @@ class DigitalClerkPopup {
         // Simulate API delay
         await this.sleep(1000);
 
-        // Check if user exists in storage
-        const result = await chrome.storage.local.get(['mockUsers']);
-        const users = result.mockUsers || {};
+        // For testing, create a mock account
+        const mockUser = {
+            companyName: 'Test Company',
+            email: email,
+            phone: '9876543210',
+            location: 'Mumbai, Maharashtra',
+            plan: 'PROFESSIONAL',
+            monthlyLimit: 1000,
+            documentsUsed: 45,
+            subscriptionStatus: 'ACTIVE', // ACTIVE, EXPIRED, CANCELLED
+            subscriptionEndsAt: '2025-12-31',
+            createdAt: new Date().toISOString()
+        };
 
-        if (users[email] && users[email].password === password) {
-            // Login successful
+        // Simple mock validation
+        if (password.length >= 6) {
             this.authToken = 'mock_token_' + Date.now();
-            this.user = users[email];
+            this.user = mockUser;
 
             await chrome.storage.local.set({
                 authToken: this.authToken,
@@ -165,6 +153,15 @@ class DigitalClerkPopup {
         const data = await response.json();
 
         if (data.success) {
+            // Check subscription status
+            if (data.user.subscriptionStatus === 'EXPIRED') {
+                this.showMessage('Your subscription has expired. Please renew.', 'warning');
+                // Still allow login but show expired warning
+            } else if (data.user.subscriptionStatus === 'CANCELLED') {
+                this.showMessage('Your account has been cancelled. Please contact support.', 'error');
+                return;
+            }
+
             this.authToken = data.token;
             this.user = data.user;
 
@@ -177,115 +174,6 @@ class DigitalClerkPopup {
             setTimeout(() => this.showMainScreen(), 1000);
         } else {
             this.showMessage(data.message || 'Login failed', 'error');
-        }
-    }
-
-    async handleSignup() {
-        const company = document.getElementById('signupCompany').value.trim();
-        const email = document.getElementById('signupEmail').value.trim();
-        const password = document.getElementById('signupPassword').value;
-
-        if (!company || !email || !password) {
-            this.showMessage('Please fill all fields', 'error');
-            return;
-        }
-
-        if (password.length < 6) {
-            this.showMessage('Password must be at least 6 characters', 'error');
-            return;
-        }
-
-        const signupBtn = document.getElementById('signupBtn');
-        signupBtn.disabled = true;
-        signupBtn.textContent = 'Creating account...';
-
-        try {
-            if (this.MOCK_MODE) {
-                // MOCK SIGNUP
-                await this.mockSignup(company, email, password);
-            } else {
-                // REAL API CALL
-                await this.realSignup(company, email, password);
-            }
-        } catch (error) {
-            console.error('Signup error:', error);
-            this.showMessage('Signup failed. Please try again.', 'error');
-        } finally {
-            signupBtn.disabled = false;
-            signupBtn.textContent = 'Create Account';
-        }
-    }
-
-    async mockSignup(company, email, password) {
-        // Simulate API delay
-        await this.sleep(1000);
-
-        // Check if user already exists
-        const result = await chrome.storage.local.get(['mockUsers']);
-        const users = result.mockUsers || {};
-
-        if (users[email]) {
-            this.showMessage('Email already exists', 'error');
-            return;
-        }
-
-        // Create new user
-        const newUser = {
-            companyName: company,
-            email: email,
-            password: password, // In real app, this would be hashed on backend
-            plan: 'STARTER',
-            monthlyLimit: 200,
-            documentsUsed: 0,
-            createdAt: new Date().toISOString()
-        };
-
-        users[email] = newUser;
-
-        await chrome.storage.local.set({
-            mockUsers: users
-        });
-
-        // Auto login
-        this.authToken = 'mock_token_' + Date.now();
-        this.user = newUser;
-
-        await chrome.storage.local.set({
-            authToken: this.authToken,
-            user: this.user
-        });
-
-        this.showMessage('Account created successfully!', 'success');
-        setTimeout(() => this.showMainScreen(), 1000);
-    }
-
-    async realSignup(company, email, password) {
-        const response = await fetch(`${this.API_URL}/auth/signup`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                companyName: company,
-                email,
-                password,
-                plan: 'STARTER'
-            })
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            this.authToken = data.token;
-            this.user = data.user;
-
-            await chrome.storage.local.set({
-                authToken: data.token,
-                user: data.user
-            });
-
-            this.showMessage('Account created successfully!', 'success');
-            setTimeout(() => this.showMainScreen(), 1000);
-        } else {
-            this.showMessage(data.message || 'Signup failed', 'error');
         }
     }
 
@@ -325,8 +213,15 @@ class DigitalClerkPopup {
     }
 
     showQuickFillSection() {
+        // Check subscription status first
+        if (this.user.subscriptionStatus === 'EXPIRED') {
+            this.showMessage('Please renew your subscription to continue', 'error');
+            this.showExpiredWarning();
+            return;
+        }
+
         // Check usage limit
-        if (this.user && this.user.documentsUsed >= this.user.monthlyLimit) {
+        if (this.user.documentsUsed >= this.user.monthlyLimit) {
             this.showMessage('Monthly limit exceeded! Please upgrade your plan.', 'error');
             document.getElementById('limitWarning').style.display = 'block';
             return;
@@ -340,11 +235,21 @@ class DigitalClerkPopup {
         document.getElementById('loadingScreen').style.display = 'none';
     }
 
+    showExpiredWarning() {
+        document.getElementById('expiredWarning').style.display = 'block';
+    }
+
     updateUserInfo() {
         if (!this.user) return;
 
         document.getElementById('userName').textContent = this.user.companyName || this.user.email;
         document.getElementById('userPlan').textContent = this.user.plan || 'STARTER PLAN';
+        
+        // Show subscription end date
+        if (this.user.subscriptionEndsAt) {
+            const endDate = new Date(this.user.subscriptionEndsAt);
+            document.getElementById('subscriptionEndDate').textContent = endDate.toLocaleDateString('en-IN');
+        }
         
         const used = this.user.documentsUsed || 0;
         const limit = this.user.monthlyLimit || 200;
@@ -361,11 +266,22 @@ class DigitalClerkPopup {
         } else {
             document.getElementById('limitWarning').style.display = 'none';
         }
+
+        // Show expired warning
+        if (this.user.subscriptionStatus === 'EXPIRED') {
+            this.showExpiredWarning();
+        }
     }
 
     openUpgradePage() {
         chrome.tabs.create({
             url: 'https://digitalclerk.app/pricing'
+        });
+    }
+
+    openRenewPage() {
+        chrome.tabs.create({
+            url: 'https://digitalclerk.app/renew'
         });
     }
 
@@ -399,6 +315,12 @@ class DigitalClerkPopup {
     }
 
     async processFiles(files) {
+        // Check subscription status
+        if (this.user.subscriptionStatus === 'EXPIRED') {
+            this.showMessage('Please renew your subscription', 'error');
+            return;
+        }
+
         // Check limit
         if (this.user.documentsUsed >= this.user.monthlyLimit) {
             this.showMessage('Monthly limit exceeded!', 'error');
@@ -493,6 +415,12 @@ class DigitalClerkPopup {
             return;
         }
 
+        // Check subscription status before processing
+        if (this.user.subscriptionStatus === 'EXPIRED') {
+            this.showMessage('Please renew your subscription to continue', 'error');
+            return;
+        }
+
         const doneBtn = document.getElementById('doneBtn');
         doneBtn.disabled = true;
         doneBtn.textContent = 'Processing...';
@@ -532,7 +460,14 @@ class DigitalClerkPopup {
             }
         } catch (error) {
             console.error('Processing error:', error);
-            this.showMessage('Error processing documents. Please try again.', 'error');
+            
+            // Check if error is due to subscription
+            if (error.message.includes('SUBSCRIPTION_EXPIRED')) {
+                this.showMessage('Your subscription has expired', 'error');
+                this.showExpiredWarning();
+            } else {
+                this.showMessage('Error processing documents. Please try again.', 'error');
+            }
         } finally {
             doneBtn.disabled = false;
             doneBtn.textContent = '✓ Process & Fill Form';
@@ -550,7 +485,7 @@ class DigitalClerkPopup {
             phone: '9876543210',
             address: 'Latur, Maharashtra, India',
             pan: 'ABCDE1234F',
-            aadhaar: '1234567890'
+            aadhaar: '123456789012'
         };
     }
 
@@ -573,6 +508,8 @@ class DigitalClerkPopup {
         } else if (result.error === 'LIMIT_EXCEEDED') {
             this.showMessage('Monthly limit exceeded!', 'error');
             return null;
+        } else if (result.error === 'SUBSCRIPTION_EXPIRED') {
+            throw new Error('SUBSCRIPTION_EXPIRED');
         } else {
             throw new Error(result.message);
         }
@@ -589,7 +526,7 @@ class DigitalClerkPopup {
         if (!this.MOCK_MODE) {
             // Also update on backend
             try {
-                await fetch(`${this.API_URL}/usage/increment`, {
+                const response = await fetch(`${this.API_URL}/usage/increment`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -597,6 +534,16 @@ class DigitalClerkPopup {
                     },
                     body: JSON.stringify({ count })
                 });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Update local user data with backend response
+                    this.user.documentsUsed = result.newUsageCount;
+                    await chrome.storage.local.set({
+                        user: this.user
+                    });
+                }
             } catch (error) {
                 console.error('Usage update error:', error);
             }
