@@ -61,7 +61,7 @@
             padding: 24px 20px;
         }
 
-        /* Login/Signup Screen */
+        /* Login Screen */
         .auth-screen {
             display: block;
         }
@@ -70,28 +70,21 @@
             display: none;
         }
 
-        .auth-tabs {
-            display: flex;
-            gap: 8px;
+        .welcome-message {
+            text-align: center;
             margin-bottom: 24px;
         }
 
-        .tab-btn {
-            flex: 1;
-            padding: 12px;
-            border: none;
-            background: #f1f5f9;
-            color: #64748b;
-            font-size: 14px;
-            font-weight: 600;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s;
+        .welcome-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 8px;
         }
 
-        .tab-btn.active {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+        .welcome-subtitle {
+            font-size: 13px;
+            color: #64748b;
         }
 
         .form-group {
@@ -144,6 +137,23 @@
             transform: none;
         }
 
+        .signup-link {
+            text-align: center;
+            margin-top: 16px;
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .signup-link a {
+            color: #667eea;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .signup-link a:hover {
+            text-decoration: underline;
+        }
+
         /* Main Menu */
         .main-screen {
             display: none;
@@ -177,6 +187,12 @@
             font-size: 11px;
             font-weight: 600;
             margin-bottom: 8px;
+        }
+
+        .subscription-info {
+            font-size: 11px;
+            color: #64748b;
+            margin-bottom: 12px;
         }
 
         .usage-bar {
@@ -409,6 +425,12 @@
             border: 1px solid rgba(59, 130, 246, 0.3);
         }
 
+        .message.warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: #d97706;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
         .loading {
             text-align: center;
             padding: 40px 20px;
@@ -479,6 +501,32 @@
             cursor: pointer;
             text-decoration: underline;
         }
+
+        .expired-warning {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #dc2626;
+            padding: 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+
+        .renew-btn {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 12px;
+        }
     </style>
 </head>
 <body>
@@ -501,54 +549,27 @@
             <div style="color: #64748b; font-size: 13px;">Loading...</div>
         </div>
 
-        <!-- Auth Screen (Login/Signup) -->
+        <!-- Login Screen -->
         <div id="authScreen" class="auth-screen hidden">
-            <div class="auth-tabs">
-                <button class="tab-btn active" id="loginTab">Login</button>
-                <button class="tab-btn" id="signupTab">Sign Up</button>
+            <div class="welcome-message">
+                <div class="welcome-title">Welcome Back!</div>
+                <div class="welcome-subtitle">Login to continue</div>
             </div>
 
-            <!-- Login Form -->
-            <div id="loginForm">
-                <div class="form-group">
-                    <label class="form-label">Email</label>
-                    <input type="email" class="form-input" id="loginEmail" placeholder="your@email.com">
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Password</label>
-                    <input type="password" class="form-input" id="loginPassword" placeholder="••••••••">
-                </div>
-
-                <button class="btn-primary" id="loginBtn">Login</button>
-
-                <div style="text-align: center; margin-top: 16px; font-size: 12px; color: #64748b;">
-                    Don't have an account? <a href="#" id="switchToSignup" style="color: #667eea;">Sign up</a>
-                </div>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-input" id="loginEmail" placeholder="your@email.com">
             </div>
 
-            <!-- Signup Form -->
-            <div id="signupForm" style="display: none;">
-                <div class="form-group">
-                    <label class="form-label">Company Name</label>
-                    <input type="text" class="form-input" id="signupCompany" placeholder="Your Company">
-                </div>
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" class="form-input" id="loginPassword" placeholder="••••••••">
+            </div>
 
-                <div class="form-group">
-                    <label class="form-label">Email</label>
-                    <input type="email" class="form-input" id="signupEmail" placeholder="your@email.com">
-                </div>
+            <button class="btn-primary" id="loginBtn">Login</button>
 
-                <div class="form-group">
-                    <label class="form-label">Password</label>
-                    <input type="password" class="form-input" id="signupPassword" placeholder="••••••••">
-                </div>
-
-                <button class="btn-primary" id="signupBtn">Create Account</button>
-
-                <div style="text-align: center; margin-top: 16px; font-size: 12px; color: #64748b;">
-                    Already have account? <a href="#" id="switchToLogin" style="color: #667eea;">Login</a>
-                </div>
+            <div class="signup-link">
+                Don't have an account? <a href="https://digitalclerk.app/signup" target="_blank">Sign up on website</a>
             </div>
         </div>
 
@@ -556,11 +577,14 @@
         <div id="mainScreen" class="main-screen">
             <div class="user-info">
                 <div class="user-name" id="userName">Loading...</div>
-                <div class="user-plan" id="userPlan">FREE PLAN</div>
+                <div class="user-plan" id="userPlan">STARTER PLAN</div>
+                <div class="subscription-info" id="subscriptionInfo">
+                    Valid till: <span id="subscriptionEndDate">Loading...</span>
+                </div>
                 
                 <div class="usage-bar">
                     <div class="usage-label">
-                        Documents Used: <span id="usageCount">0</span> / <span id="usageLimit">10</span>
+                        Documents Used: <span id="usageCount">0</span> / <span id="usageLimit">200</span>
                     </div>
                     <div class="usage-progress">
                         <div class="usage-fill" id="usageFill" style="width: 0%"></div>
@@ -569,6 +593,11 @@
 
                 <div id="limitWarning" class="limit-warning" style="display: none;">
                     ⚠️ Limit reached! <span class="upgrade-link" id="upgradeLink">Upgrade now</span>
+                </div>
+
+                <div id="expiredWarning" class="expired-warning" style="display: none;">
+                    ⚠️ Subscription Expired!
+                    <button class="renew-btn" id="renewBtn">Renew Subscription</button>
                 </div>
             </div>
 
