@@ -82,5 +82,9 @@
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.0.1",
     "vite": "^5.4.1"
+  },
+  "dependencies": {
+    "@google-cloud/vision": "^4.3.2",
+    "dotenv": "^16.4.5"
   }
 }
