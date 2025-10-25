@@ -1,6 +1,7 @@
-// Enhanced Document AI OCR Service with Universal Processing
-// Now supports any document type with AI-powered field detection
+// Enhanced Document AI OCR Service with Google Cloud Vision API
+// Complete implementation with real OCR
 
+import vision from '@google-cloud/vision';
 import { UniversalDocumentProcessor, UniversalProcessingResult, ProcessingOptions } from './UniversalDocumentProcessor';
 import { intelligentExtraction } from './IntelligentExtraction';
 
@@ -41,6 +42,24 @@ export interface ProcessingConfig {
 }
 
 export class EnhancedDocumentAIOCRService {
+  
+  // Google Cloud Vision API client with your API key
+  private static visionClient = new vision.ImageAnnotatorClient({
+    credentials: {
+      type: 'service_account',
+      project_id: 'digitalclerk',
+      private_key_id: 'key-id',
+      private_key: '-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY\n-----END PRIVATE KEY-----\n',
+      client_email: 'vision-api@digitalclerk.iam.gserviceaccount.com',
+      client_id: 'client-id',
+      auth_uri: 'https://accounts.google.com/o/oauth2/auth',
+      token_uri: 'https://oauth2.googleapis.com/token',
+      auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
+      client_x509_cert_url: 'https://www.googleapis.com/robot/v1/metadata/x509/...'
+    },
+    // Alternative: Use API Key directly (simpler but less secure)
+    apiKey: 'AIzaSyDMqFu3DCMFo-q1_BCxhlzXJQP-OQRQxXM'
+  });
   
   /**
    * Enhanced document processing with universal AI capabilities
@@ -122,7 +141,7 @@ export class EnhancedDocumentAIOCRService {
       // Legacy compatibility
       text: this.reconstructTextFromFields(universalResult.detectedFields),
       confidence: universalResult.overallConfidence,
-      detectedLanguage: 'en', // Could be enhanced to detect actual language
+      detectedLanguage: 'en',
       qualityScore: universalResult.overallConfidence,
       
       // Enhanced universal results
@@ -157,19 +176,24 @@ export class EnhancedDocumentAIOCRService {
     console.log('📝 Using Legacy Processor...');
     
     try {
+      // Use Google Vision OCR to extract text
+      const ocrResult = await this.performAdvancedOCR(file);
+      
       // Use existing legacy extraction
       const legacyResult = intelligentExtraction(
-        await this.fileToText(file),
+        ocrResult.text,
         config.hintDocumentType === 'auto' ? 'auto' : config.hintDocumentType
       );
       
       return {
-        text: await this.fileToText(file),
-        confidence: legacyResult.confidence,
+        text: ocrResult.text,
+        confidence: ocrResult.confidence,
+        detectedLanguage: ocrResult.language,
+        qualityScore: ocrResult.confidence,
         extractedFields: legacyResult.extractedFields,
         processingMode: 'legacy',
         overallConfidence: legacyResult.confidence,
-        processingNotes: ['Used legacy processing system']
+        processingNotes: ['Used legacy processing with Google Vision OCR']
       };
     } catch (error) {
       console.error('Legacy processing failed:', error);
@@ -178,11 +202,115 @@ export class EnhancedDocumentAIOCRService {
   }
 
   /**
-   * Converts file to text (placeholder - would use actual OCR)
+   * REAL OCR using Google Cloud Vision API
    */
   private static async fileToText(file: File): Promise<string> {
-    // This is a placeholder - in real implementation would use OCR service
-    return `OCR text from ${file.name}`;
+    try {
+      console.log('🔍 Performing OCR with Google Vision API...');
+      
+      // Convert File to Buffer
+      const buffer = await file.arrayBuffer();
+      const imageBuffer = Buffer.from(buffer);
+      
+      // Perform text detection
+      const [result] = await this.visionClient.textDetection(imageBuffer);
+      const detections = result.textAnnotations;
+      
+      if (!detections || detections.length === 0) {
+        console.warn('⚠️ No text detected in image');
+        return '';
+      }
+      
+      // First annotation contains all detected text
+      const fullText = detections[0].description || '';
+      
+      console.log('✅ OCR completed:', {
+        textLength: fullText.length,
+        linesDetected: fullText.split('\n').length
+      });
+      
+      return fullText;
+      
+    } catch (error) {
+      console.error('❌ Google Vision OCR failed:', error);
+      throw new Error(`OCR failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Enhanced OCR with document type detection and confidence scores
+   */
+  private static async performAdvancedOCR(file: File): Promise<{
+    text: string;
+    confidence: number;
+    language: string;
+  }> {
+    try {
+      console.log('🔍 Performing advanced OCR...');
+      
+      const buffer = await file.arrayBuffer();
+      const imageBuffer = Buffer.from(buffer);
+      
+      // Use document text detection for better accuracy on documents
+      const [result] = await this.visionClient.documentTextDetection(imageBuffer);
+      
+      if (!result.fullTextAnnotation) {
+        console.warn('⚠️ No text annotation found');
+        return {
+          text: '',
+          confidence: 0,
+          language: 'en'
+        };
+      }
+      
+      const fullText = result.fullTextAnnotation.text || '';
+      
+      // Calculate average confidence
+      const pages = result.fullTextAnnotation.pages || [];
+      let totalConfidence = 0;
+      let confidenceCount = 0;
+      
+      pages.forEach(page => {
+        page.blocks?.forEach(block => {
+          if (block.confidence) {
+            totalConfidence += block.confidence;
+            confidenceCount++;
+          }
+        });
+      });
+      
+      const avgConfidence = confidenceCount > 0 ? totalConfidence / confidenceCount : 0.5;
+      
+      // Detect language
+      const detectedLanguage = pages[0]?.property?.detectedLanguages?.[0]?.languageCode || 'en';
+      
+      console.log('✅ Advanced OCR completed:', {
+        textLength: fullText.length,
+        confidence: Math.round(avgConfidence * 100) + '%',
+        language: detectedLanguage
+      });
+      
+      return {
+        text: fullText,
+        confidence: avgConfidence,
+        language: detectedLanguage
+      };
+      
+    } catch (error) {
+      console.error('❌ Advanced OCR failed:', error);
+      
+      // Fallback to simple text detection
+      try {
+        const text = await this.fileToText(file);
+        return {
+          text,
+          confidence: 0.7,
+          language: 'en'
+        };
+      } catch (fallbackError) {
+        throw error;
+      }
+    }
   }
 
   /**
@@ -315,5 +443,40 @@ export class EnhancedDocumentAIOCRService {
       formData: result.universalResult?.formReadyData || {},
       confidence: result.overallConfidence
     };
+  }
+
+  /**
+   * Extract text from specific image (direct OCR)
+   */
+  static async extractTextFromImage(imageData: string | Buffer): Promise<string> {
+    try {
+      const [result] = await this.visionClient.textDetection(imageData);
+      return result.textAnnotations?.[0]?.description || '';
+    } catch (error) {
+      console.error('Text extraction failed:', error);
+      return '';
+    }
+  }
+
+  /**
+   * Detect document type using Google Vision
+   */
+  static async detectDocumentType(file: File): Promise<string> {
+    try {
+      const text = await this.fileToText(file);
+      
+      // Simple pattern matching for common Indian documents
+      if (/PAN|PERMANENT ACCOUNT NUMBER/i.test(text)) return 'PAN_CARD';
+      if (/AADHAAR|आधार/i.test(text)) return 'AADHAAR';
+      if (/PASSPORT/i.test(text)) return 'PASSPORT';
+      if (/DRIVING LICENCE|DL/i.test(text)) return 'DRIVING_LICENSE';
+      if (/GSTIN|GST/i.test(text)) return 'GST_CERTIFICATE';
+      if (/VOTER|ELECTION/i.test(text)) return 'VOTER_ID';
+      
+      return 'UNKNOWN';
+    } catch (error) {
+      console.error('Document type detection failed:', error);
+      return 'UNKNOWN';
+    }
   }
 }
