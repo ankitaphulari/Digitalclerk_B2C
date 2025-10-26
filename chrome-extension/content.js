@@ -1,9 +1,10 @@
-// Simplified content.js with edit functionality
+// Enhanced content.js with checkbox, radio, and all field types support
 class FormFillerContent {
     constructor() {
         this.extractedData = null;
         this.filledFields = new Map();
         this.setupMessageListener();
+        this.injectStyles();
         console.log('Form Filler Content Script Loaded');
     }
 
@@ -30,21 +31,17 @@ class FormFillerContent {
         }
 
         this.extractedData = data;
-        const forms = document.querySelectorAll('form');
+        const allFields = document.querySelectorAll('input, select, textarea');
         let totalFilled = 0;
 
-        forms.forEach(form => {
-            const inputs = form.querySelectorAll('input, select, textarea');
-            
-            inputs.forEach(input => {
-                if (this.shouldSkipField(input)) return;
+        allFields.forEach(field => {
+            if (this.shouldSkipField(field)) return;
 
-                const value = this.findValueForField(input, data);
-                if (value && !input.value) {
-                    this.fillField(input, value);
-                    totalFilled++;
-                }
-            });
+            const value = this.findValueForField(field, data);
+            if (value !== null && value !== undefined) {
+                const filled = this.fillField(field, value);
+                if (filled) totalFilled++;
+            }
         });
 
         if (totalFilled > 0) {
@@ -53,12 +50,13 @@ class FormFillerContent {
     }
 
     shouldSkipField(input) {
-        const skipTypes = ['hidden', 'submit', 'button', 'reset', 'file'];
+        const skipTypes = ['hidden', 'submit', 'button', 'reset', 'file', 'image'];
         return skipTypes.includes(input.type);
     }
 
     findValueForField(input, data) {
         const fieldName = (input.name || input.id || input.placeholder || '').toLowerCase();
+        const fieldType = (input.type || '').toLowerCase();
         
         // Try exact match first
         for (const [key, value] of Object.entries(data)) {
@@ -67,12 +65,31 @@ class FormFillerContent {
             }
         }
 
+        // For radio buttons, check the value attribute too
+        if (fieldType === 'radio') {
+            const radioValue = (input.value || '').toLowerCase();
+            for (const [key, value] of Object.entries(data)) {
+                const dataValue = String(value).toLowerCase();
+                if (fieldName.includes(key.toLowerCase()) && 
+                    (radioValue === dataValue || this.matchesYesNo(radioValue, dataValue))) {
+                    return value;
+                }
+            }
+        }
+
         // Try common patterns
         const patterns = {
-            name: ['name', 'fullname', 'full_name'],
-            email: ['email', 'e-mail', 'mail'],
-            phone: ['phone', 'mobile', 'contact', 'tel'],
-            address: ['address', 'street', 'location']
+            name: ['name', 'fullname', 'full_name', 'username'],
+            email: ['email', 'e-mail', 'mail', 'e_mail'],
+            phone: ['phone', 'mobile', 'contact', 'tel', 'telephone'],
+            address: ['address', 'street', 'location', 'addr'],
+            pincode: ['pincode', 'pin', 'zip', 'postal', 'zipcode'],
+            city: ['city', 'town'],
+            state: ['state', 'province'],
+            dob: ['dob', 'dateofbirth', 'date_of_birth', 'birthdate'],
+            gender: ['gender', 'sex'],
+            aadhaar: ['aadhaar', 'aadhar', 'uid'],
+            pan: ['pan', 'pancard', 'pan_card'],
         };
 
         for (const [dataKey, keywords] of Object.entries(patterns)) {
@@ -85,26 +102,225 @@ class FormFillerContent {
     }
 
     fillField(input, value) {
-        // Store original value
-        if (!this.filledFields.has(input)) {
-            this.filledFields.set(input, {
-                originalValue: input.value,
-                filledValue: value
-            });
+        const fieldType = (input.type || input.tagName).toLowerCase();
+
+        try {
+            // Store original value
+            if (!this.filledFields.has(input)) {
+                this.filledFields.set(input, {
+                    originalValue: input.value,
+                    filledValue: value
+                });
+            }
+
+            let filled = false;
+
+            // Handle different field types
+            switch (fieldType) {
+                case 'checkbox':
+                    filled = this.fillCheckbox(input, value);
+                    break;
+                    
+                case 'radio':
+                    filled = this.fillRadio(input, value);
+                    break;
+                    
+                case 'select':
+                case 'select-one':
+                case 'select-multiple':
+                    filled = this.fillSelect(input, value);
+                    break;
+                    
+                case 'date':
+                    filled = this.fillDate(input, value);
+                    break;
+                    
+                case 'textarea':
+                    filled = this.fillTextarea(input, value);
+                    break;
+                    
+                case 'text':
+                case 'email':
+                case 'tel':
+                case 'number':
+                case 'url':
+                case 'search':
+                default:
+                    filled = this.fillTextInput(input, value);
+                    break;
+            }
+
+            if (filled) {
+                this.highlightField(input);
+                if (fieldType !== 'checkbox' && fieldType !== 'radio') {
+                    this.addEditButton(input);
+                }
+            }
+
+            return filled;
+        } catch (error) {
+            console.error('Error filling field:', error);
+            return false;
         }
+    }
 
-        // Fill the field
-        input.value = value;
-        
-        // Trigger events
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        input.dispatchEvent(new Event('change', { bubbles: true }));
+    fillTextInput(input, value) {
+        if (!input.value || input.value === '') {
+            input.value = String(value).trim();
+            this.triggerEvents(input);
+            return true;
+        }
+        return false;
+    }
 
-        // Add visual feedback
-        this.highlightField(input);
+    fillCheckbox(input, value) {
+        const shouldCheck = this.parseCheckboxValue(value);
         
-        // Add edit button
-        this.addEditButton(input);
+        if (input.checked !== shouldCheck) {
+            input.checked = shouldCheck;
+            this.triggerEvents(input, ['change', 'click']);
+            return true;
+        }
+        return false;
+    }
+
+    parseCheckboxValue(value) {
+        if (typeof value === 'boolean') return value;
+        
+        const strValue = String(value).toLowerCase().trim();
+        
+        const trueValues = ['yes', 'true', '1', 'on', 'checked', 'agree', 'accept', 'y'];
+        const falseValues = ['no', 'false', '0', 'off', 'unchecked', 'disagree', 'decline', 'n'];
+        
+        if (trueValues.includes(strValue)) return true;
+        if (falseValues.includes(strValue)) return false;
+        
+        return !!value && value !== '';
+    }
+
+    fillRadio(input, value) {
+        const fieldValue = (input.value || '').toLowerCase().trim();
+        const searchValue = String(value).toLowerCase().trim();
+        
+        // Direct match
+        if (fieldValue === searchValue) {
+            input.checked = true;
+            this.triggerEvents(input, ['change', 'click']);
+            return true;
+        }
+        
+        // Yes/No matching
+        if (this.matchesYesNo(fieldValue, searchValue)) {
+            input.checked = true;
+            this.triggerEvents(input, ['change', 'click']);
+            return true;
+        }
+        
+        // Gender matching
+        if (this.matchesGender(fieldValue, searchValue)) {
+            input.checked = true;
+            this.triggerEvents(input, ['change', 'click']);
+            return true;
+        }
+        
+        return false;
+    }
+
+    matchesYesNo(fieldValue, searchValue) {
+        const yesValues = ['yes', 'y', 'true', '1', 'agree', 'accept'];
+        const noValues = ['no', 'n', 'false', '0', 'disagree', 'decline'];
+        
+        if (yesValues.includes(searchValue) && yesValues.includes(fieldValue)) return true;
+        if (noValues.includes(searchValue) && noValues.includes(fieldValue)) return true;
+        
+        return false;
+    }
+
+    matchesGender(fieldValue, searchValue) {
+        const maleValues = ['male', 'm', 'man', 'mr', 'boy'];
+        const femaleValues = ['female', 'f', 'woman', 'mrs', 'ms', 'miss', 'girl'];
+        
+        if (maleValues.includes(searchValue) && maleValues.includes(fieldValue)) return true;
+        if (femaleValues.includes(searchValue) && femaleValues.includes(fieldValue)) return true;
+        
+        return false;
+    }
+
+    fillSelect(select, value) {
+        const searchValue = String(value).toLowerCase().trim();
+        
+        // Try exact match first
+        for (let i = 0; i < select.options.length; i++) {
+            const option = select.options[i];
+            const optionText = option.text.toLowerCase().trim();
+            const optionValue = option.value.toLowerCase().trim();
+            
+            if (optionText === searchValue || optionValue === searchValue) {
+                select.selectedIndex = i;
+                this.triggerEvents(select);
+                return true;
+            }
+        }
+        
+        // Try partial match
+        for (let i = 0; i < select.options.length; i++) {
+            const option = select.options[i];
+            const optionText = option.text.toLowerCase().trim();
+            
+            if (optionText.includes(searchValue) || searchValue.includes(optionText)) {
+                select.selectedIndex = i;
+                this.triggerEvents(select);
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    fillDate(input, value) {
+        try {
+            let dateValue;
+            
+            if (value instanceof Date) {
+                dateValue = value.toISOString().split('T')[0];
+            } else {
+                // Parse DD/MM/YYYY or DD-MM-YYYY
+                const dateStr = String(value).trim();
+                const parts = dateStr.split(/[-/]/);
+                
+                if (parts.length === 3) {
+                    const day = parseInt(parts[0]);
+                    const month = parseInt(parts[1]) - 1;
+                    const year = parseInt(parts[2]);
+                    const date = new Date(year, month, day);
+                    dateValue = date.toISOString().split('T')[0];
+                } else {
+                    dateValue = new Date(dateStr).toISOString().split('T')[0];
+                }
+            }
+            
+            input.value = dateValue;
+            this.triggerEvents(input);
+            return true;
+        } catch (error) {
+            console.error('Date parsing error:', error);
+            return false;
+        }
+    }
+
+    fillTextarea(textarea, value) {
+        if (!textarea.value || textarea.value === '') {
+            textarea.value = String(value).trim();
+            this.triggerEvents(textarea);
+            return true;
+        }
+        return false;
+    }
+
+    triggerEvents(element, events = ['input', 'change', 'blur']) {
+        events.forEach(eventType => {
+            element.dispatchEvent(new Event(eventType, { bubbles: true }));
+        });
     }
 
     highlightField(input) {
@@ -113,6 +329,7 @@ class FormFillerContent {
         
         input.style.border = '2px solid #10b981';
         input.style.backgroundColor = '#ecfdf5';
+        input.style.transition = 'all 0.3s ease';
 
         setTimeout(() => {
             input.style.border = originalBorder;
@@ -126,10 +343,14 @@ class FormFillerContent {
         
         input.dataset.hasEditBtn = 'true';
 
+        // Create wrapper if needed
+        const wrapper = this.createWrapper(input);
+
         // Create edit button
         const editBtn = document.createElement('button');
         editBtn.innerHTML = '✏️';
         editBtn.className = 'digitalclerk-edit-btn';
+        editBtn.type = 'button';
         editBtn.style.cssText = `
             position: absolute;
             right: 8px;
@@ -161,12 +382,18 @@ class FormFillerContent {
             this.makeFieldEditable(input, editBtn);
         });
 
-        // Wrap input in relative container if needed
-        if (getComputedStyle(input.parentElement).position === 'static') {
-            input.parentElement.style.position = 'relative';
-        }
+        wrapper.appendChild(editBtn);
+    }
 
-        input.parentElement.appendChild(editBtn);
+    createWrapper(input) {
+        const parent = input.parentElement;
+        const position = getComputedStyle(parent).position;
+        
+        if (position === 'static' || position === '') {
+            parent.style.position = 'relative';
+        }
+        
+        return parent;
     }
 
     makeFieldEditable(input, editBtn) {
@@ -188,6 +415,7 @@ class FormFillerContent {
 
     showNotification(message) {
         const notification = document.createElement('div');
+        notification.className = 'digitalclerk-notification';
         notification.style.cssText = `
             position: fixed;
             top: 20px;
@@ -197,7 +425,7 @@ class FormFillerContent {
             padding: 16px 20px;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            z-index: 10000;
+            z-index: 999999;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 14px;
             font-weight: 600;
@@ -211,6 +439,34 @@ class FormFillerContent {
             notification.style.animation = 'slideOut 0.3s ease';
             setTimeout(() => notification.remove(), 300);
         }, 3000);
+    }
+
+    injectStyles() {
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from {
+                    transform: translateX(400px);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+            
+            @keyframes slideOut {
+                from {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+                to {
+                    transform: translateX(400px);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(style);
     }
 }
 
