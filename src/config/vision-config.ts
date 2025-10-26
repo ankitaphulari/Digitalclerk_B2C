@@ -2,20 +2,23 @@
 // For DigitalClerk OCR Service
 // SECURITY: API key is loaded from environment variables
 
+// Vite exposes env vars prefixed with VITE_ via import.meta.env
 export const GOOGLE_VISION_CONFIG = {
-  // Load API key from environment variable (NEVER hardcode it!)
-  apiKey: process.env.GOOGLE_VISION_API_KEY || '',
+  // Load API key from Vite environment variable (NEVER hardcode it!)
+  apiKey: import.meta.env.VITE_GOOGLE_VISION_API_KEY || '',
   
   // Project ID (optional)
-  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID || '',
+  projectId: import.meta.env.VITE_GOOGLE_CLOUD_PROJECT_ID || '',
 };
 
 // Validate configuration on startup
 if (!GOOGLE_VISION_CONFIG.apiKey) {
-  throw new Error(
+  console.error(
     '❌ GOOGLE_VISION_API_KEY is not set in environment variables. ' +
-    'Please add it to your .env file or deployment environment.'
+    'Please add VITE_GOOGLE_VISION_API_KEY to your .env file.'
   );
+  // Don't throw in browser - just warn
+  // throw new Error('Missing Google Vision API Key');
 }
 
 // OCR Processing Options
@@ -75,14 +78,16 @@ export const DOCUMENT_PATTERNS = {
     /DRIVING LICENCE/i,
     /DRIVING LICENSE/i,
     /DL NO/i,
-    /FORM OF LICENCE/i
+    /FORM OF LICENCE/i,
+    /\b[A-Z]{2}\d{2}\s?\d{11}\b/  // DL format: MH12 20230012345
   ],
   
   VOTER_ID: [
     /VOTER/i,
     /ELECTION/i,
     /ELECTORAL/i,
-    /EPIC NO/i
+    /EPIC NO/i,
+    /\b[A-Z]{3}\d{7}\b/  // Voter ID format: ABC1234567
   ],
   
   GST_CERTIFICATE: [
