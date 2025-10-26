@@ -1,7 +1,7 @@
 {
   "name": "digitalclerk-backend",
   "version": "1.0.0",
-  "description": "DigitalClerk Backend API",
+  "description": "DigitalClerk Backend API - In-Memory Storage",
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/server.ts",
@@ -9,17 +9,19 @@
     "start": "node dist/server.js",
     "test": "echo \"No tests yet\""
   },
-  "keywords": ["digitalclerk", "form-filling", "automation"],
+  "keywords": ["digitalclerk", "form-filling", "automation", "ocr"],
   "author": "Your Name",
   "license": "ISC",
   "dependencies": {
     "express": "^4.18.2",
-    "mongoose": "^8.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "jsonwebtoken": "^9.0.2",
     "bcryptjs": "^2.4.3",
-    "razorpay": "^2.9.2"
+    "multer": "^1.4.5-lts.1",
+    "tesseract.js": "^5.0.4",
+    "pdf-parse": "^1.1.1",
+    "sharp": "^0.33.2"
   },
   "devDependencies": {
     "@types/express": "^4.17.20",
@@ -27,6 +29,7 @@
     "@types/cors": "^2.8.15",
     "@types/jsonwebtoken": "^9.0.4",
     "@types/bcryptjs": "^2.4.5",
+    "@types/multer": "^1.4.11",
     "typescript": "^5.2.2",
     "ts-node": "^10.9.1",
     "nodemon": "^3.0.1"
