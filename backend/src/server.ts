@@ -1,5 +1,4 @@
 import express, { Request, Response, NextFunction } from 'express';
-import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
@@ -7,89 +6,170 @@ import bcrypt from 'bcryptjs';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 
+// Import document extraction controller
+import documentRoutes from './routes/document.routes';
+
 dotenv.config();
 
 const app = express();
 
 // Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'https://digitalclerk.app',
+    'https://*.digitalclerk.app',
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI as string)
-  .then(() => console.log('✅ MongoDB Connected'))
-  .catch((err) => console.error('❌ MongoDB Error:', err));
-
-// Razorpay Instance
-const razorpay = new Razorpay({
+// Razorpay Instance (Optional - only if you need payments now)
+const razorpay = process.env.RAZORPAY_KEY_ID ? new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID as string,
   key_secret: process.env.RAZORPAY_KEY_SECRET as string,
-});
+}) : null;
 
-// ==================== MODELS ====================
+// ==================== IN-MEMORY STORAGE ====================
 
-// User Schema
-const userSchema = new mongoose.Schema({
-  companyName: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  phone: { type: String, required: true },
-  location: { type: String, required: true },
-  plan: { 
-    type: String, 
-    enum: ['Starter', 'Professional', 'Enterprise'],
-    default: 'Starter'
-  },
-  planPrice: { type: Number, default: 999 },
-  subscriptionStatus: { 
-    type: String, 
-    enum: ['active', 'expired', 'cancelled'],
-    default: 'active'
-  },
-  subscriptionId: String,
-  subscriptionStartDate: Date,
-  subscriptionEndDate: Date,
-  documentsUsed: { type: Number, default: 0 },
-  documentLimit: { type: Number, default: 500 },
-  createdAt: { type: Date, default: Date.now },
-  razorpayOrderId: String,
-  razorpayPaymentId: String,
-});
+interface User {
+  id: string;
+  companyName: string;
+  email: string;
+  password: string;
+  phone: string;
+  location: string;
+  plan: string;
+  planPrice: number;
+  subscriptionStatus: 'active' | 'expired' | 'cancelled';
+  documentsUsed: number;
+  documentLimit: number;
+  subscriptionEndDate: Date;
+  createdAt: Date;
+}
 
-const User = mongoose.model('User', userSchema);
+interface Document {
+  id: string;
+  userId: string;
+  fileName: string;
+  fileType: string;
+  documentType?: string;
+  extractedData: any;
+  confidence?: number;
+  createdAt: Date;
+}
 
-// Document Schema
-const documentSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  fileName: { type: String, required: true },
-  fileType: { type: String, required: true },
-  extractedData: { type: Object, required: true },
-  createdAt: { type: Date, default: Date.now },
-});
+// In-memory stores
+const users: Map<string, User> = new Map();
+const documents: Map<string, Document> = new Map();
+const extractionHistory: any[] = [];
 
-const Document = mongoose.model('Document', documentSchema);
+// Helper to generate IDs
+const generateId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+// Plan pricing
+const PLAN_PRICING: { [key: string]: { price: number; limit: number } } = {
+  Starter: { price: 999, limit: 500 },
+  Professional: { price: 1999, limit: 1000 },
+  Enterprise: { price: 2999, limit: 5000 },
+};
 
 // ==================== MIDDLEWARE ====================
 
 interface AuthRequest extends Request {
   userId?: string;
+  user?: {
+    id: string;
+    email: string;
+    companyName: string;
+  };
 }
 
-const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
+const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
     
     if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
+      return res.status(401).json({ 
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'No token provided' 
+      });
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: string };
     req.userId = decoded.userId;
+    
+    // Set user object for compatibility
+    const user = users.get(decoded.userId);
+    if (user) {
+      req.user = {
+        id: user.id,
+        email: user.email,
+        companyName: user.companyName
+      };
+    }
+    
     next();
   } catch (error) {
-    return res.status(401).json({ error: 'Invalid token' });
+    if (error instanceof jwt.TokenExpiredError) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'TOKEN_EXPIRED',
+        message: 'Your session has expired. Please login again.' 
+      });
+    }
+    return res.status(401).json({ 
+      success: false,
+      error: 'INVALID_TOKEN',
+      message: 'Invalid token' 
+    });
   }
+};
+
+// Export for use in other files
+export { authMiddleware };
+
+// Export data access functions for controllers
+export const getUserById = (userId: string): User | null => {
+  return users.get(userId) || null;
+};
+
+export const updateUserUsage = (userId: string, count: number): number => {
+  const user = users.get(userId);
+  if (!user) throw new Error('User not found');
+  
+  user.documentsUsed += count;
+  users.set(userId, user);
+  return user.documentsUsed;
+};
+
+export const saveDocument = (doc: Omit<Document, 'id' | 'createdAt'>): Document => {
+  const document: Document = {
+    ...doc,
+    id: generateId(),
+    createdAt: new Date()
+  };
+  documents.set(document.id, document);
+  return document;
+};
+
+export const saveHistory = (userId: string, data: any): void => {
+  extractionHistory.push({
+    userId,
+    ...data,
+    timestamp: new Date()
+  });
+};
+
+export const getHistory = (userId: string, limit: number = 10): any[] => {
+  return extractionHistory
+    .filter(h => h.userId === userId)
+    .slice(0, limit);
 };
 
 // ==================== ROUTES ====================
@@ -100,7 +180,7 @@ app.post('/api/signup', async (req: Request, res: Response) => {
     const { companyName, email, password, phone, location, plan } = req.body;
 
     // Check if user exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = Array.from(users.values()).find(u => u.email === email);
     if (existingUser) {
       return res.status(400).json({ error: 'Email already registered' });
     }
@@ -108,17 +188,12 @@ app.post('/api/signup', async (req: Request, res: Response) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Plan pricing
-    const planPricing: { [key: string]: { price: number; limit: number } } = {
-      Starter: { price: 999, limit: 500 },
-      Professional: { price: 1999, limit: 1000 },
-      Enterprise: { price: 2999, limit: 5000 },
-    };
-
-    const selectedPlan = planPricing[plan] || planPricing.Starter;
+    const selectedPlan = PLAN_PRICING[plan] || PLAN_PRICING.Starter;
 
     // Create user
-    const user = new User({
+    const userId = generateId();
+    const user: User = {
+      id: userId,
       companyName,
       email,
       password: hashedPassword,
@@ -127,16 +202,17 @@ app.post('/api/signup', async (req: Request, res: Response) => {
       plan,
       planPrice: selectedPlan.price,
       documentLimit: selectedPlan.limit,
+      documentsUsed: 0,
       subscriptionStatus: 'active',
-      subscriptionStartDate: new Date(),
-      subscriptionEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-    });
+      subscriptionEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      createdAt: new Date()
+    };
 
-    await user.save();
+    users.set(userId, user);
 
     res.status(201).json({
       message: 'User created successfully',
-      userId: user._id,
+      userId: user.id,
       email: user.email,
     });
   } catch (error) {
@@ -145,19 +221,155 @@ app.post('/api/signup', async (req: Request, res: Response) => {
   }
 });
 
-// 2. CREATE RAZORPAY ORDER
+// 2. LOGIN
+app.post('/api/login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    // Find user
+    const user = Array.from(users.values()).find(u => u.email === email);
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Check password
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Generate JWT
+    const token = jwt.sign(
+      { userId: user.id },
+      process.env.JWT_SECRET as string,
+      { expiresIn: '30d' }
+    );
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        companyName: user.companyName,
+        email: user.email,
+        plan: user.plan,
+        documentsUsed: user.documentsUsed,
+        monthlyLimit: user.documentLimit,
+        documentLimit: user.documentLimit,
+        subscriptionStatus: user.subscriptionStatus,
+        subscriptionEndsAt: user.subscriptionEndDate,
+      },
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// 3. AUTH VERIFICATION (for Chrome Extension)
+app.get('/api/auth/verify', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const user = users.get(req.userId!);
+    if (!user) {
+      return res.status(404).json({ 
+        valid: false,
+        error: 'User not found' 
+      });
+    }
+
+    res.json({ 
+      valid: true,
+      user: {
+        id: user.id,
+        companyName: user.companyName,
+        email: user.email,
+        plan: user.plan,
+        documentsUsed: user.documentsUsed,
+        monthlyLimit: user.documentLimit,
+        subscriptionStatus: user.subscriptionStatus,
+      }
+    });
+  } catch (error) {
+    console.error('Verify error:', error);
+    res.status(500).json({ valid: false, error: 'Verification failed' });
+  }
+});
+
+// 4. GET USER PROFILE (Protected)
+app.get('/api/user/profile', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const user = users.get(req.userId!);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const { password, ...userWithoutPassword } = user;
+    res.json({ user: userWithoutPassword });
+  } catch (error) {
+    console.error('Profile fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+// 5. INCREMENT USAGE (for Chrome Extension)
+app.post('/api/usage/increment', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const { count } = req.body;
+    
+    const user = users.get(req.userId!);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'User not found' 
+      });
+    }
+
+    user.documentsUsed += count;
+    users.set(req.userId!, user);
+
+    res.json({
+      success: true,
+      newUsageCount: user.documentsUsed
+    });
+  } catch (error) {
+    console.error('Usage increment error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to update usage' 
+    });
+  }
+});
+
+// 6. GET DOCUMENTS (Protected)
+app.get('/api/documents', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const userDocs = Array.from(documents.values())
+      .filter(doc => doc.userId === req.userId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    
+    res.json({ documents: userDocs });
+  } catch (error) {
+    console.error('Documents fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch documents' });
+  }
+});
+
+// ==================== RAZORPAY ROUTES (Optional) ====================
+
+// CREATE ORDER (only if Razorpay is configured)
 app.post('/api/create-order', async (req: Request, res: Response) => {
+  if (!razorpay) {
+    return res.status(503).json({ error: 'Payment service not configured' });
+  }
+
   try {
     const { amount, currency, plan, userId } = req.body;
 
     const options = {
-      amount: amount * 100, // amount in paise
+      amount: amount * 100,
       currency: currency || 'INR',
       receipt: `receipt_${Date.now()}`,
-      notes: {
-        plan,
-        userId,
-      },
+      notes: { plan, userId },
     };
 
     const order = await razorpay.orders.create(options);
@@ -173,8 +385,12 @@ app.post('/api/create-order', async (req: Request, res: Response) => {
   }
 });
 
-// 3. VERIFY PAYMENT
+// VERIFY PAYMENT
 app.post('/api/verify-payment', async (req: Request, res: Response) => {
+  if (!razorpay) {
+    return res.status(503).json({ error: 'Payment service not configured' });
+  }
+
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, userId } = req.body;
 
@@ -185,14 +401,12 @@ app.post('/api/verify-payment', async (req: Request, res: Response) => {
       .digest('hex');
 
     if (razorpay_signature === expectedSign) {
-      // Payment verified - Update user
-      await User.findByIdAndUpdate(userId, {
-        subscriptionStatus: 'active',
-        razorpayOrderId: razorpay_order_id,
-        razorpayPaymentId: razorpay_payment_id,
-        subscriptionStartDate: new Date(),
-        subscriptionEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      });
+      const user = users.get(userId);
+      if (user) {
+        user.subscriptionStatus = 'active';
+        user.subscriptionEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        users.set(userId, user);
+      }
 
       res.json({ message: 'Payment verified successfully', verified: true });
     } else {
@@ -204,121 +418,96 @@ app.post('/api/verify-payment', async (req: Request, res: Response) => {
   }
 });
 
-// 4. LOGIN
-app.post('/api/login', async (req: Request, res: Response) => {
-  try {
-    const { email, password } = req.body;
+// ==================== DOCUMENT EXTRACTION ROUTES ====================
+app.use('/api/document', documentRoutes);
 
-    // Find user
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
+// ==================== UTILITY ROUTES ====================
 
-    // Check password
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    // Generate JWT
-    const token = jwt.sign(
-      { userId: user._id },
-      process.env.JWT_SECRET as string,
-      { expiresIn: '30d' }
-    );
-
-    res.json({
-      token,
-      user: {
-        id: user._id,
-        companyName: user.companyName,
-        email: user.email,
-        plan: user.plan,
-        documentsUsed: user.documentsUsed,
-        documentLimit: user.documentLimit,
-        subscriptionStatus: user.subscriptionStatus,
-      },
-    });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Login failed' });
-  }
-});
-
-// 5. GET USER PROFILE (Protected)
-app.get('/api/user/profile', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const user = await User.findById(req.userId).select('-password');
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    res.json({ user });
-  } catch (error) {
-    console.error('Profile fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch profile' });
-  }
-});
-
-// 6. SAVE DOCUMENT (Protected)
-app.post('/api/documents/save', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const { fileName, fileType, extractedData } = req.body;
-
-    // Check document limit
-    const user = await User.findById(req.userId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    if (user.documentsUsed >= user.documentLimit) {
-      return res.status(403).json({ error: 'Document limit reached' });
-    }
-
-    // Save document
-    const document = new Document({
-      userId: req.userId,
-      fileName,
-      fileType,
-      extractedData,
-    });
-
-    await document.save();
-
-    // Increment usage
-    user.documentsUsed += 1;
-    await user.save();
-
-    res.json({
-      message: 'Document saved successfully',
-      documentsUsed: user.documentsUsed,
-      documentLimit: user.documentLimit,
-    });
-  } catch (error) {
-    console.error('Document save error:', error);
-    res.status(500).json({ error: 'Failed to save document' });
-  }
-});
-
-// 7. GET DOCUMENTS (Protected)
-app.get('/api/documents', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const documents = await Document.find({ userId: req.userId }).sort({ createdAt: -1 });
-    res.json({ documents });
-  } catch (error) {
-    console.error('Documents fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch documents' });
-  }
-});
-
-// 8. HEALTH CHECK
+// Health Check
 app.get('/api/health', (req: Request, res: Response) => {
-  res.json({ status: 'OK', message: 'Server is running' });
+  res.json({ 
+    status: 'OK', 
+    message: 'Server is running',
+    timestamp: new Date().toISOString(),
+    storage: 'in-memory',
+    stats: {
+      users: users.size,
+      documents: documents.size,
+    },
+    services: {
+      razorpay: razorpay ? '✅ Configured' : '❌ Not configured',
+      googleVision: process.env.GOOGLE_VISION_API_KEY ? '✅ Configured' : '❌ Not configured'
+    }
+  });
 });
 
-// Start Server
+// Test endpoint
+app.get('/test', (req: Request, res: Response) => {
+  res.json({ message: 'DigitalClerk API is running!' });
+});
+
+// ==================== ERROR HANDLERS ====================
+
+// 404 Handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'NOT_FOUND',
+    message: 'Endpoint not found',
+    path: req.path
+  });
+});
+
+// Error Handler
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Error:', err);
+  
+  res.status(err.status || 500).json({
+    success: false,
+    error: err.message || 'Internal Server Error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+});
+
+// ==================== START SERVER ====================
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`
+╔════════════════════════════════════════════════════╗
+║      DigitalClerk API Server (Simplified)         ║
+╠════════════════════════════════════════════════════╣
+║  🚀 Server: http://localhost:${PORT}                    ║
+║  💾 Storage: In-Memory (No Database)               ║
+║  💳 Razorpay: ${razorpay ? '✅ Enabled' : '❌ Disabled'}                      ║
+║  🔍 Google Vision OCR: ${process.env.GOOGLE_VISION_API_KEY ? '✅ Enabled' : '❌ Disabled'}         ║
+║  📄 Document Processing: Ready                     ║
+║  🌐 Environment: ${process.env.NODE_ENV || 'development'}                           ║
+╚════════════════════════════════════════════════════╝
+  `);
+  
+  console.log('📡 Available Endpoints:');
+  console.log('   Authentication:');
+  console.log(`     POST http://localhost:${PORT}/api/signup`);
+  console.log(`     POST http://localhost:${PORT}/api/login`);
+  console.log(`     GET  http://localhost:${PORT}/api/auth/verify`);
+  console.log('');
+  console.log('   Document Extraction (OCR):');
+  console.log(`     POST http://localhost:${PORT}/api/document/extract`);
+  console.log(`     GET  http://localhost:${PORT}/api/document/history`);
+  console.log('');
+  console.log('   User & Documents:');
+  console.log(`     GET  http://localhost:${PORT}/api/user/profile`);
+  console.log(`     GET  http://localhost:${PORT}/api/documents`);
+  console.log(`     POST http://localhost:${PORT}/api/usage/increment`);
+  console.log('');
+  console.log('   Utility:');
+  console.log(`     GET  http://localhost:${PORT}/api/health`);
+  console.log('\n✅ Server is ready! (Data will be lost on restart)\n');
+  
+  // Warnings
+  if (!process.env.GOOGLE_VISION_API_KEY) {
+    console.warn('⚠️  WARNING: GOOGLE_VISION_API_KEY not found!');
+    console.warn('   OCR functionality will not work.\n');
+  }
 });
