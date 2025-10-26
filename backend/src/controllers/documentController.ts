@@ -1,5 +1,5 @@
 // backend/src/controllers/documentController.ts
-// Complete implementation with Google Vision OCR
+// Version without MongoDB - uses in-memory storage from server.ts
 
 import { Request, Response } from 'express';
 import { performOCR } from '../services/performOCR';
@@ -13,6 +13,9 @@ import { DrivingLicenceExtractor } from '../services/DrivingLicenceExtractor';
 import { VoterIDExtractor } from '../services/VoterIDExtractor';
 import { SmartDocumentClassifier } from '../services/SmartDocumentClassifier';
 
+// Import storage functions from server (in-memory)
+import { getUserById, updateUserUsage, saveHistory, getHistory } from '../server';
+
 /**
  * Main endpoint for Chrome Extension
  * POST /api/document/extract
@@ -20,7 +23,7 @@ import { SmartDocumentClassifier } from '../services/SmartDocumentClassifier';
 export async function extractDocument(req: Request, res: Response) {
   try {
     const { documents } = req.body;
-    const userId = req.user?.id; // From JWT middleware
+    const userId = req.user?.id;
 
     console.log('📄 Document extraction request:', {
       userId,
@@ -37,8 +40,8 @@ export async function extractDocument(req: Request, res: Response) {
       });
     }
 
-    // Check user subscription and limits (mock for now)
-    const user = await getUserById(userId);
+    // Get user from in-memory storage
+    const user = getUserById(userId!);
     
     if (!user) {
       return res.status(401).json({
@@ -49,7 +52,7 @@ export async function extractDocument(req: Request, res: Response) {
     }
 
     // Check subscription status
-    if (user.subscriptionStatus === 'EXPIRED') {
+    if (user.subscriptionStatus === 'expired') {
       return res.status(403).json({
         success: false,
         error: 'SUBSCRIPTION_EXPIRED',
@@ -58,15 +61,15 @@ export async function extractDocument(req: Request, res: Response) {
     }
 
     // Check monthly limit
-    if (user.documentsUsed >= user.monthlyLimit) {
+    if (user.documentsUsed >= user.documentLimit) {
       return res.status(403).json({
         success: false,
         error: 'LIMIT_EXCEEDED',
-        message: `Monthly limit of ${user.monthlyLimit} documents exceeded.`
+        message: `Monthly limit of ${user.documentLimit} documents exceeded.`
       });
     }
 
-    const remainingLimit = user.monthlyLimit - user.documentsUsed;
+    const remainingLimit = user.documentLimit - user.documentsUsed;
     if (documents.length > remainingLimit) {
       return res.status(403).json({
         success: false,
@@ -177,11 +180,11 @@ export async function extractDocument(req: Request, res: Response) {
       }
     }
 
-    // Update usage count
-    await updateDocumentUsage(userId, documents.length);
+    // Update usage count (in-memory)
+    const newUsageCount = updateUserUsage(userId!, documents.length);
 
-    // Save history (optional)
-    await saveExtractionHistory(userId, {
+    // Save history (in-memory)
+    saveHistory(userId!, {
       documents: documentResults,
       extractedData: allExtractedData,
       timestamp: new Date()
@@ -203,8 +206,8 @@ export async function extractDocument(req: Request, res: Response) {
         processedSuccessfully: successfulDocs,
         failed: documents.length - successfulDocs,
         documentDetails: documentResults,
-        newUsageCount: user.documentsUsed + documents.length,
-        remainingLimit: user.monthlyLimit - (user.documentsUsed + documents.length)
+        newUsageCount: newUsageCount,
+        remainingLimit: user.documentLimit - newUsageCount
       }
     });
 
@@ -228,7 +231,8 @@ export async function getExtractionHistory(req: Request, res: Response) {
     const userId = req.user?.id;
     const { limit = 10, offset = 0 } = req.query;
 
-    const history = await getHistoryFromDB(userId, Number(limit), Number(offset));
+    // Get history from in-memory storage
+    const history = getHistory(userId!, Number(limit));
 
     res.json({
       success: true,
@@ -253,7 +257,8 @@ export async function incrementUsage(req: Request, res: Response) {
     const userId = req.user?.id;
     const { count } = req.body;
 
-    const newCount = await updateDocumentUsage(userId, count);
+    // Update in in-memory storage
+    const newCount = updateUserUsage(userId!, count);
 
     res.json({
       success: true,
@@ -274,93 +279,12 @@ export async function incrementUsage(req: Request, res: Response) {
  * Convert Buffer to File-like object for Node.js
  */
 function bufferToFile(buffer: Buffer, fileName: string, mimeType: string): any {
-  // For Node.js, we can use the Buffer directly
-  // Add properties to make it File-like
+  // For Node.js, create a File-like object
   return Object.assign(buffer, {
     name: fileName,
     type: mimeType,
     arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
   });
-}
-
-/**
- * Get user from database (MOCK - replace with real DB)
- */
-async function getUserById(userId: string): Promise<any> {
-  // TODO: Replace with actual database query
-  // Example: return await db.users.findOne({ id: userId });
-  
-  console.log('📊 Fetching user:', userId);
-  
-  // Mock user for testing
-  return {
-    id: userId,
-    companyName: 'ABC CA Firm',
-    email: 'abc@example.com',
-    plan: 'PROFESSIONAL',
-    monthlyLimit: 1000,
-    documentsUsed: 45,
-    subscriptionStatus: 'ACTIVE', // ACTIVE, EXPIRED, CANCELLED
-    subscriptionEndsAt: '2025-12-31'
-  };
-}
-
-/**
- * Update document usage count in database
- */
-async function updateDocumentUsage(userId: string, count: number): Promise<number> {
-  // TODO: Replace with actual database update
-  // Example:
-  // await db.users.update(
-  //   { id: userId },
-  //   { $inc: { documentsUsed: count } }
-  // );
-  
-  console.log(`📈 Updated usage for ${userId}: +${count} documents`);
-  
-  // Return new count (mock)
-  return 45 + count;
-}
-
-/**
- * Save extraction history to database
- */
-async function saveExtractionHistory(userId: string, data: any): Promise<void> {
-  // TODO: Replace with actual database insert
-  // Example:
-  // await db.extractionHistory.insert({
-  //   userId,
-  //   ...data,
-  //   createdAt: new Date()
-  // });
-  
-  console.log('💾 Saved history for user:', userId);
-}
-
-/**
- * Get extraction history from database
- */
-async function getHistoryFromDB(userId: string, limit: number, offset: number): Promise<any[]> {
-  // TODO: Replace with actual database query
-  // Example:
-  // return await db.extractionHistory.find({ userId })
-  //   .sort({ createdAt: -1 })
-  //   .limit(limit)
-  //   .skip(offset);
-  
-  console.log('📚 Fetching history for:', userId);
-  
-  // Mock history
-  return [
-    {
-      id: '1',
-      timestamp: new Date(),
-      documents: [
-        { fileName: 'pan.jpg', documentType: 'PAN_CARD', success: true }
-      ],
-      extractedData: { name: 'John Doe', pan: 'ABCDE1234F' }
-    }
-  ];
 }
 
 export default {
