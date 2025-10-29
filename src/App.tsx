@@ -10,20 +10,13 @@ import { LanguageProvider } from "./LanguageSupport";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
-import AadhaarForm from "./pages/AadhaarForm";
-import PANForm from "./pages/PANForm";
-import PassportForm from "./pages/PassportForm";
-import DrivingForm from "./pages/DrivingForm";
-import ScholarshipForm from "./pages/ScholarshipForm";
-import GSTForm from "./pages/GSTForm";
 import DocumentCollection from "./pages/DocumentCollection";
 import TemplateCreator from "./pages/TemplateCreator";
 import ProfileDatabase from "./pages/ProfileDatabase";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import FormLinksPage from "./components/FormLinksPage";
 import GoogleTranslate from "./components/GoogleTranslator";
-
-// New pages for business workflow
+// Business workflow pages
 import Homepage from "./pages/Homepage";
 import BusinessSignup from "./pages/BusinessSignup";
 import Login from "./pages/Login";
@@ -51,16 +44,10 @@ const App = () => {
                     <Route path="/login" element={<Login />} />
                     <Route path="/pricing" element={<Pricing />} />
                     <Route path="/dashboard" element={<Dashboard />} />
-
+                    
                     {/* Legacy/Demo Routes */}
                     <Route path="/demo" element={<Index />} />
                     <Route path="/auth" element={<Auth />} />
-                    <Route path="/aadhaar" element={<AadhaarForm />} />
-                    <Route path="/pan" element={<PANForm />} />
-                    <Route path="/passport" element={<PassportForm />} />
-                    <Route path="/driving" element={<DrivingForm />} />
-                    <Route path="/scholarship" element={<ScholarshipForm />} />
-                    <Route path="/gst" element={<GSTForm />} />
                     <Route path="/documents" element={<DocumentCollection />} />
                     <Route
                       path="/template-creator/:templateType"
@@ -71,10 +58,10 @@ const App = () => {
                       element={<ProfileDatabase />}
                     />
                     <Route path="/analytics" element={<AnalyticsPage />} />
-
-                    {/* Form Routes */}
+                    
+                    {/* Form Routes - Generic handler for all form types */}
                     <Route path="/form/:formType" element={<FormLinksPage />} />
-
+                    
                     {/* 404 Route */}
                     <Route path="*" element={<NotFound />} />
                   </Routes>
