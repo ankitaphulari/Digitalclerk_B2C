@@ -1,9 +1,9 @@
 // DigitalClerk Extension - Updated Version
 class DigitalClerkPopup {
     constructor() {
-        // API Configuration - CHANGE THIS TO YOUR BACKEND URL
-        this.API_URL = 'https://api.digitalclerk.app/api'; // TODO: Replace with your actual API
-        // For local development: 'http://localhost:5000/api'
+        // API Configuration
+        this.API_URL = 'https://api.digitalclerk.app/api';
+        this.WEBSITE_URL = 'https://digitalclerk.netlify.app';
         
         // MOCK MODE - Set to false when backend is ready
         this.MOCK_MODE = true;
@@ -329,13 +329,13 @@ class DigitalClerkPopup {
 
     openUpgradePage() {
         chrome.tabs.create({
-            url: 'https://digitalclerk.app/pricing'
+            url: `${this.WEBSITE_URL}/pricing`
         });
     }
 
     openRenewPage() {
         chrome.tabs.create({
-            url: 'https://digitalclerk.app/dashboard'
+            url: `${this.WEBSITE_URL}/dashboard`
         });
     }
 
