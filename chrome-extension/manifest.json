@@ -22,8 +22,7 @@
     "matches": [
       "http://localhost:*/*",
       "https://localhost:*/*",
-       "https://digitalclerk.netlify.app/"
-    
+      "https://digitalclerk.netlify.app/*"
     ]
   },
   
