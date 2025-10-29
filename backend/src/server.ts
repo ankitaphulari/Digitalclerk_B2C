@@ -18,8 +18,8 @@ app.use(cors({
   origin: [
     'http://localhost:3000',
     'http://localhost:5173',
-    'https://digitalclerk.app',
-    'https://*.digitalclerk.app',
+    'https://digitalclerk.netlify.app/',
+    'https://digitalclerk.netlify.app/',
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
