@@ -1,4 +1,5 @@
-import { supabase } from '@/integrations/supabase/client';
+// Mock user for MVP - in production, this would come from authentication
+const MOCK_USER_ID = 'mvp-user-001';
 
 export interface UserProfile {
   id: string;
@@ -45,6 +46,20 @@ export interface FormSubmissionProfile {
   created_at: string;
 }
 
+// Helper functions for localStorage
+const getFromStorage = <T>(key: string): T[] => {
+  const data = localStorage.getItem(key);
+  return data ? JSON.parse(data) : [];
+};
+
+const saveToStorage = <T>(key: string, data: T[]): void => {
+  localStorage.setItem(key, JSON.stringify(data));
+};
+
+const generateId = (): string => {
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+};
+
 export class ProfileDatabaseService {
   // Profile Management
   static async createProfile(profileData: {
@@ -52,72 +67,54 @@ export class ProfileDatabaseService {
     profile_name: string;
     photo_url?: string;
   }): Promise<UserProfile> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
+    const profiles = getFromStorage<UserProfile>('user_profiles');
+    
+    const newProfile: UserProfile = {
+      id: generateId(),
+      user_id: MOCK_USER_ID,
+      ...profileData,
+      completion_percentage: 0,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
 
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .insert({
-        user_id: user.id,
-        ...profileData,
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as UserProfile;
+    profiles.push(newProfile);
+    saveToStorage('user_profiles', profiles);
+    
+    return newProfile;
   }
 
   static async updateProfile(profileId: string, updates: Partial<UserProfile>): Promise<UserProfile> {
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .update(updates)
-      .eq('id', profileId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as UserProfile;
+    const profiles = getFromStorage<UserProfile>('user_profiles');
+    const index = profiles.findIndex(p => p.id === profileId);
+    
+    if (index === -1) throw new Error('Profile not found');
+    
+    profiles[index] = {
+      ...profiles[index],
+      ...updates,
+      updated_at: new Date().toISOString(),
+    };
+    
+    saveToStorage('user_profiles', profiles);
+    return profiles[index];
   }
 
   static async getUserProfiles(): Promise<UserProfile[]> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
-
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .order('updated_at', { ascending: false });
-
-    if (error) throw error;
-    return (data || []) as UserProfile[];
+    const profiles = getFromStorage<UserProfile>('user_profiles');
+    return profiles
+      .filter(p => p.user_id === MOCK_USER_ID && p.is_active)
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
   }
 
   static async getProfilesByType(profileType: 'student' | 'job_seeker' | 'general'): Promise<UserProfile[]> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
-
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('profile_type', profileType)
-      .eq('is_active', true)
-      .order('updated_at', { ascending: false });
-
-    if (error) throw error;
-    return (data || []) as UserProfile[];
+    const profiles = await this.getUserProfiles();
+    return profiles.filter(p => p.profile_type === profileType);
   }
 
   static async deleteProfile(profileId: string): Promise<void> {
-    const { error } = await supabase
-      .from('user_profiles')
-      .update({ is_active: false })
-      .eq('id', profileId);
-
-    if (error) throw error;
+    await this.updateProfile(profileId, { is_active: false });
   }
 
   // Profile Data Management
@@ -129,35 +126,50 @@ export class ProfileDatabaseService {
     confidence_score?: number;
     source_document_id?: string;
   }>): Promise<ProfileData[]> {
-    const fieldsToInsert = fields.map(field => ({
-      profile_id: profileId,
-      data_source: field.data_source || 'manual',
-      confidence_score: field.confidence_score || 100,
-      ...field,
-    }));
+    const profileDataList = getFromStorage<ProfileData>('profile_data');
+    const newDataList: ProfileData[] = [];
 
-    const { data, error } = await supabase
-      .from('profile_data')
-      .upsert(fieldsToInsert, { 
-        onConflict: 'profile_id,field_key',
-        ignoreDuplicates: false 
-      })
-      .select();
+    fields.forEach(field => {
+      // Check if field already exists (upsert logic)
+      const existingIndex = profileDataList.findIndex(
+        pd => pd.profile_id === profileId && pd.field_key === field.field_key
+      );
 
-    if (error) throw error;
-    return (data || []) as ProfileData[];
+      const newData: ProfileData = {
+        id: existingIndex !== -1 ? profileDataList[existingIndex].id : generateId(),
+        profile_id: profileId,
+        field_key: field.field_key,
+        field_value: field.field_value,
+        field_category: field.field_category,
+        data_source: field.data_source || 'manual',
+        confidence_score: field.confidence_score || 100,
+        source_document_id: field.source_document_id,
+        created_at: existingIndex !== -1 ? profileDataList[existingIndex].created_at : new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      if (existingIndex !== -1) {
+        profileDataList[existingIndex] = newData;
+      } else {
+        profileDataList.push(newData);
+      }
+
+      newDataList.push(newData);
+    });
+
+    saveToStorage('profile_data', profileDataList);
+    return newDataList;
   }
 
   static async getProfileData(profileId: string): Promise<ProfileData[]> {
-    const { data, error } = await supabase
-      .from('profile_data')
-      .select('*')
-      .eq('profile_id', profileId)
-      .order('field_category', { ascending: true })
-      .order('field_key', { ascending: true });
-
-    if (error) throw error;
-    return (data || []) as ProfileData[];
+    const profileDataList = getFromStorage<ProfileData>('profile_data');
+    return profileDataList
+      .filter(pd => pd.profile_id === profileId)
+      .sort((a, b) => {
+        const categoryCompare = (a.field_category || '').localeCompare(b.field_category || '');
+        if (categoryCompare !== 0) return categoryCompare;
+        return (a.field_key || '').localeCompare(b.field_key || '');
+      });
   }
 
   static async updateProfileCompletion(profileId: string): Promise<void> {
@@ -174,31 +186,32 @@ export class ProfileDatabaseService {
 
   // Document Linking
   static async linkDocumentToProfile(profileId: string, documentId: string, documentType?: string, isPrimary = false): Promise<ProfileDocument> {
-    const { data, error } = await supabase
-      .from('profile_documents')
-      .insert({
-        profile_id: profileId,
-        document_id: documentId,
-        document_type: documentType,
-        is_primary: isPrimary,
-      })
-      .select()
-      .single();
+    const profileDocuments = getFromStorage<ProfileDocument>('profile_documents');
+    
+    const newDoc: ProfileDocument = {
+      id: generateId(),
+      profile_id: profileId,
+      document_id: documentId,
+      document_type: documentType,
+      is_primary: isPrimary,
+      created_at: new Date().toISOString(),
+    };
 
-    if (error) throw error;
-    return data;
+    profileDocuments.push(newDoc);
+    saveToStorage('profile_documents', profileDocuments);
+    
+    return newDoc;
   }
 
   static async getProfileDocuments(profileId: string): Promise<ProfileDocument[]> {
-    const { data, error } = await supabase
-      .from('profile_documents')
-      .select('*')
-      .eq('profile_id', profileId)
-      .order('is_primary', { ascending: false })
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    const profileDocuments = getFromStorage<ProfileDocument>('profile_documents');
+    return profileDocuments
+      .filter(pd => pd.profile_id === profileId)
+      .sort((a, b) => {
+        if (a.is_primary && !b.is_primary) return -1;
+        if (!a.is_primary && b.is_primary) return 1;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
   }
 
   // Form Submission Tracking
@@ -209,34 +222,30 @@ export class ProfileDatabaseService {
     submission_data: any;
     should_save_profile: boolean;
   }): Promise<FormSubmissionProfile> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
+    const submissions = getFromStorage<FormSubmissionProfile>('form_submissions');
+    
+    const newSubmission: FormSubmissionProfile = {
+      id: generateId(),
+      user_id: MOCK_USER_ID,
+      form_type: formData.form_type,
+      form_url: formData.form_url,
+      profile_id: formData.profile_id,
+      submission_data: formData.submission_data,
+      should_save_profile: formData.should_save_profile,
+      created_at: new Date().toISOString(),
+    };
 
-    const { data, error } = await supabase
-      .from('form_submission_profiles')
-      .insert({
-        user_id: user.id,
-        ...formData,
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+    submissions.push(newSubmission);
+    saveToStorage('form_submissions', submissions);
+    
+    return newSubmission;
   }
 
   static async getUserFormSubmissions(): Promise<FormSubmissionProfile[]> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
-
-    const { data, error } = await supabase
-      .from('form_submission_profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    const submissions = getFromStorage<FormSubmissionProfile>('form_submissions');
+    return submissions
+      .filter(s => s.user_id === MOCK_USER_ID)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }
 
   // Combined Data Retrieval
@@ -250,18 +259,11 @@ export class ProfileDatabaseService {
       this.getUserFormSubmissions(),
     ]);
 
-    // Get recent documents for active profiles
-    let recentDocuments: any[] = [];
-    if (profiles.length > 0) {
-      const { data: documents } = await supabase
-        .from('document_uploads')
-        .select('*')
-        .eq('user_id', profiles[0].user_id)
-        .order('created_at', { ascending: false })
-        .limit(10);
-      
-      recentDocuments = documents || [];
-    }
+    // Get recent documents (mock data for MVP)
+    const recentDocuments = getFromStorage<any>('document_uploads')
+      .filter((doc: any) => doc.user_id === MOCK_USER_ID)
+      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 10);
 
     return {
       profiles,
@@ -272,26 +274,25 @@ export class ProfileDatabaseService {
 
   // Photo Management
   static async uploadProfilePhoto(file: File, profileId: string): Promise<string> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
-
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}/${profileId}/photo.${fileExt}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from('profile-photos')
-      .upload(fileName, file, { upsert: true });
-
-    if (uploadError) throw uploadError;
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('profile-photos')
-      .getPublicUrl(fileName);
-
-    // Update profile with photo URL
-    await this.updateProfile(profileId, { photo_url: publicUrl });
-
-    return publicUrl;
+    // Convert file to base64 for localStorage (MVP only - not recommended for production)
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64String = reader.result as string;
+        
+        // Save to localStorage (simplified for MVP)
+        const photos = getFromStorage<{profileId: string, photoUrl: string}>('profile_photos');
+        photos.push({ profileId, photoUrl: base64String });
+        saveToStorage('profile_photos', photos);
+        
+        // Update profile with photo URL
+        await this.updateProfile(profileId, { photo_url: base64String });
+        
+        resolve(base64String);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   }
 
   // Smart Profile Creation from Documents
