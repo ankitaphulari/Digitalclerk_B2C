@@ -12,8 +12,6 @@ import {
   TrendingUp, TrendingDown, Clock, CheckCircle, AlertCircle, 
   Target, Users, FileText, Zap, Eye, Download
 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
 
 interface AnalyticsData {
   formFillingStats: {
@@ -41,35 +39,23 @@ interface AnalyticsData {
 }
 
 const AnalyticsDashboard: React.FC = () => {
-  const { user } = useAuth();
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedTimeRange, setSelectedTimeRange] = useState('7d');
 
   useEffect(() => {
-    if (user) {
-      loadAnalyticsData();
-    }
-  }, [user, selectedTimeRange]);
+    loadAnalyticsData();
+  }, [selectedTimeRange]);
 
   const loadAnalyticsData = async () => {
     try {
       setLoading(true);
       
-      // Fetch analytics data from multiple sources
-      const [formStats, documentStats, behaviorStats, performanceStats] = await Promise.all([
-        fetchFormFillingStats(),
-        fetchDocumentProcessingStats(),
-        fetchUserBehaviorStats(),
-        fetchPerformanceStats()
-      ]);
-
-      setAnalyticsData({
-        formFillingStats: formStats,
-        documentProcessing: documentStats,
-        userBehavior: behaviorStats,
-        performance: performanceStats
-      });
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Generate mock data
+      setAnalyticsData(generateMockAnalyticsData());
     } catch (error) {
       console.error('Failed to load analytics data:', error);
     } finally {
@@ -77,218 +63,71 @@ const AnalyticsDashboard: React.FC = () => {
     }
   };
 
-  const fetchFormFillingStats = async () => {
-    try {
-      const { data: applications } = await supabase
-        .from('applications')
-        .select('*')
-        .eq('user_id', user?.id!)
-        .gte('created_at', getDateRange(selectedTimeRange));
-
-      const totalForms = applications?.length || 0;
-      const successfulFills = applications?.filter(app => app.status === 'completed').length || 0;
-      const avgTime = calculateAverageProcessingTime(applications || []);
-      const accuracyRate = totalForms > 0 ? (successfulFills / totalForms) * 100 : 0;
-
-      return {
-        totalForms,
-        successfulFills,
-        averageTime: avgTime,
-        accuracyRate
-      };
-    } catch (error) {
-      console.error('Error fetching form filling stats:', error);
-      return { totalForms: 0, successfulFills: 0, averageTime: 0, accuracyRate: 0 };
-    }
-  };
-
-  const fetchDocumentProcessingStats = async () => {
-    try {
-      const { data: documents } = await supabase
-        .from('document_uploads')
-        .select('*')
-        .eq('user_id', user?.id!)
-        .gte('created_at', getDateRange(selectedTimeRange));
-
-      const totalDocuments = documents?.length || 0;
-      const processedSuccessfully = documents?.filter(doc => doc.processing_status === 'completed').length || 0;
-      const avgConfidence = calculateAverageConfidence(documents || []);
-      const topDocumentTypes = calculateTopDocumentTypes(documents || []);
-
-      return {
-        totalDocuments,
-        processedSuccessfully,
-        averageConfidence: avgConfidence,
-        topDocumentTypes
-      };
-    } catch (error) {
-      console.error('Error fetching document processing stats:', error);
-      return { totalDocuments: 0, processedSuccessfully: 0, averageConfidence: 0, topDocumentTypes: [] };
-    }
-  };
-
-  const fetchUserBehaviorStats = async () => {
-    try {
-      const { data: applications } = await supabase
-        .from('applications')
-        .select('form_type, status, created_at')
-        .eq('user_id', user?.id!)
-        .gte('created_at', getDateRange(selectedTimeRange));
-
-      const mostUsedForms = calculateMostUsedForms(applications || []);
-      const timeSpentAnalytics = calculateTimeSpentAnalytics(applications || []);
-      const deviceUsage = getDeviceUsageStats();
-
-      return {
-        mostUsedForms,
-        timeSpentAnalytics,
-        deviceUsage
-      };
-    } catch (error) {
-      console.error('Error fetching user behavior stats:', error);
-      return { mostUsedForms: [], timeSpentAnalytics: [], deviceUsage: [] };
-    }
-  };
-
-  const fetchPerformanceStats = async () => {
-    try {
-      const { data: documents } = await supabase
-        .from('document_uploads')
-        .select('created_at, updated_at, processing_status')
-        .eq('user_id', user?.id!)
-        .gte('created_at', getDateRange(selectedTimeRange));
-
-      const ocrProcessingTime = calculateOCRProcessingTime(documents || []);
-      const formFillSuccess = calculateFormFillSuccess(documents || []);
-      const userSatisfaction = 85; // Mock data - would come from user feedback
-
-      return {
-        ocrProcessingTime,
-        formFillSuccess,
-        userSatisfaction
-      };
-    } catch (error) {
-      console.error('Error fetching performance stats:', error);
-      return { ocrProcessingTime: [], formFillSuccess: [], userSatisfaction: 0 };
-    }
-  };
-
-  // Helper functions for calculations
-  const getDateRange = (range: string) => {
-    const now = new Date();
-    const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
-    const startDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-    return startDate.toISOString();
-  };
-
-  const calculateAverageProcessingTime = (applications: any[]) => {
-    if (applications.length === 0) return 0;
+  const generateMockAnalyticsData = (): AnalyticsData => {
+    const multiplier = selectedTimeRange === '7d' ? 1 : selectedTimeRange === '30d' ? 4 : 12;
     
-    const times = applications.map(app => {
-      const created = new Date(app.created_at).getTime();
-      const updated = new Date(app.updated_at).getTime();
-      return updated - created;
-    });
-    
-    return times.reduce((sum, time) => sum + time, 0) / times.length / 1000; // Convert to seconds
-  };
-
-  const calculateAverageConfidence = (documents: any[]) => {
-    if (documents.length === 0) return 0;
-    
-    const confidences = documents
-      .filter(doc => doc.confidence_score)
-      .map(doc => doc.confidence_score);
-    
-    if (confidences.length === 0) return 0;
-    
-    return confidences.reduce((sum, conf) => sum + conf, 0) / confidences.length;
-  };
-
-  const calculateTopDocumentTypes = (documents: any[]) => {
-    const typeCounts: Record<string, number> = {};
-    
-    documents.forEach(doc => {
-      if (doc.document_type) {
-        typeCounts[doc.document_type] = (typeCounts[doc.document_type] || 0) + 1;
+    return {
+      formFillingStats: {
+        totalForms: 45 * multiplier,
+        successfulFills: 42 * multiplier,
+        averageTime: 180, // 3 minutes
+        accuracyRate: 93.3
+      },
+      documentProcessing: {
+        totalDocuments: 38 * multiplier,
+        processedSuccessfully: 36 * multiplier,
+        averageConfidence: 94.2,
+        topDocumentTypes: [
+          { type: 'Passport', count: 12 * multiplier },
+          { type: 'Aadhar Card', count: 10 * multiplier },
+          { type: 'PAN Card', count: 8 * multiplier },
+          { type: 'Driving License', count: 5 * multiplier },
+          { type: 'Bank Statement', count: 3 * multiplier }
+        ]
+      },
+      userBehavior: {
+        mostUsedForms: [
+          { formType: 'Visa Application', count: 15 * multiplier, successRate: 95 },
+          { formType: 'Job Application', count: 12 * multiplier, successRate: 92 },
+          { formType: 'Insurance Form', count: 8 * multiplier, successRate: 88 },
+          { formType: 'Bank Account', count: 6 * multiplier, successRate: 97 },
+          { formType: 'Tax Filing', count: 4 * multiplier, successRate: 90 }
+        ],
+        timeSpentAnalytics: [
+          { day: 'Mon', timeSpent: 85 },
+          { day: 'Tue', timeSpent: 120 },
+          { day: 'Wed', timeSpent: 95 },
+          { day: 'Thu', timeSpent: 145 },
+          { day: 'Fri', timeSpent: 110 },
+          { day: 'Sat', timeSpent: 60 },
+          { day: 'Sun', timeSpent: 45 }
+        ],
+        deviceUsage: [
+          { device: 'Desktop', percentage: 65 },
+          { device: 'Mobile', percentage: 25 },
+          { device: 'Tablet', percentage: 10 }
+        ]
+      },
+      performance: {
+        ocrProcessingTime: Array.from({ length: 7 }, (_, i) => {
+          const date = new Date();
+          date.setDate(date.getDate() - (6 - i));
+          return {
+            date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            avgTime: Math.floor(Math.random() * 2000) + 2500
+          };
+        }),
+        formFillSuccess: Array.from({ length: 7 }, (_, i) => {
+          const date = new Date();
+          date.setDate(date.getDate() - (6 - i));
+          return {
+            date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            successRate: Math.floor(Math.random() * 10) + 88
+          };
+        }),
+        userSatisfaction: 92
       }
-    });
-    
-    return Object.entries(typeCounts)
-      .map(([type, count]) => ({ type, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-  };
-
-  const calculateMostUsedForms = (applications: any[]) => {
-    const formCounts: Record<string, { count: number; successful: number }> = {};
-    
-    applications.forEach(app => {
-      if (app.form_type) {
-        if (!formCounts[app.form_type]) {
-          formCounts[app.form_type] = { count: 0, successful: 0 };
-        }
-        formCounts[app.form_type].count++;
-        if (app.status === 'completed') {
-          formCounts[app.form_type].successful++;
-        }
-      }
-    });
-    
-    return Object.entries(formCounts)
-      .map(([formType, stats]) => ({
-        formType,
-        count: stats.count,
-        successRate: stats.count > 0 ? (stats.successful / stats.count) * 100 : 0
-      }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-  };
-
-  const calculateTimeSpentAnalytics = (applications: any[]) => {
-    // Mock implementation - would use actual time tracking data
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return days.map(day => ({
-      day,
-      timeSpent: Math.floor(Math.random() * 120) + 30 // 30-150 minutes
-    }));
-  };
-
-  const getDeviceUsageStats = () => {
-    // Mock implementation - would use actual device detection data
-    return [
-      { device: 'Desktop', percentage: 65 },
-      { device: 'Mobile', percentage: 25 },
-      { device: 'Tablet', percentage: 10 }
-    ];
-  };
-
-  const calculateOCRProcessingTime = (documents: any[]) => {
-    // Mock implementation - would use actual processing time data
-    const last7Days = Array.from({ length: 7 }, (_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      return {
-        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        avgTime: Math.floor(Math.random() * 5000) + 2000 // 2-7 seconds
-      };
-    }).reverse();
-    
-    return last7Days;
-  };
-
-  const calculateFormFillSuccess = (documents: any[]) => {
-    // Mock implementation - would use actual success rate data
-    const last7Days = Array.from({ length: 7 }, (_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      return {
-        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        successRate: Math.floor(Math.random() * 20) + 80 // 80-100%
-      };
-    }).reverse();
-    
-    return last7Days;
+    };
   };
 
   const exportAnalytics = async () => {
@@ -296,8 +135,8 @@ const AnalyticsDashboard: React.FC = () => {
       const dataToExport = {
         exportDate: new Date().toISOString(),
         timeRange: selectedTimeRange,
-        userId: user?.id,
-        analytics: analyticsData
+        analytics: analyticsData,
+        note: 'This is sample data for MVP demonstration'
       };
       
       const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
