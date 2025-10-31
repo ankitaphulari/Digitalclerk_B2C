@@ -122,7 +122,7 @@ export default function Login() {
 
         {/* Footer */}
         <div className="mt-8 text-center text-blue-100 text-sm">
-          <p>© 2024 DigitalClerk. All rights reserved.</p>
+          <p>© 2025 DigitalClerk. All rights reserved.</p>
         </div>
       </div>
     </div>
