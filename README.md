@@ -207,7 +207,7 @@ This project is proprietary software. All rights reserved.
 **DigitalClerk Team**
 - Website: https://digitalclerk.netlify.app
 - Email: support@digitalclerk.app
-- Phone: +91 98765 43210
+- Phone: +91 ***** *****
 
 ## 🙏 Acknowledgments
 
