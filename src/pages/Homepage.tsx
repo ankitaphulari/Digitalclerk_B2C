@@ -1,6 +1,9 @@
 import { Zap, Shield, Clock, TrendingUp, CheckCircle, Chrome, FileText, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export default function Homepage() {
+  const navigate = useNavigate();
+
   const features = [
     {
       icon: Zap,
@@ -53,21 +56,52 @@ export default function Homepage() {
     'Government Portals'
   ];
 
+  // Button handlers
+  const handleDownloadExtension = () => {
+    // For now, navigate to signup. Later, link to Chrome Web Store
+    window.open('https://chrome.google.com/webstore', '_blank');
+  };
+
+  const handleWatchDemo = () => {
+    // Navigate to demo or dashboard
+    navigate('/demo');
+  };
+
+  const handleLogin = () => {
+    navigate('/login');
+  };
+
+  const handleStartTrial = () => {
+    navigate('/signup');
+  };
+
+  const handleBookDemo = () => {
+    // Could open a calendar or contact form
+    window.location.href = 'mailto:support@digitalclerk.app?subject=Book a Demo';
+  };
+
+  const scrollToSection = (sectionId: string) => {
+    const element = document.getElementById(sectionId);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-white">
       {/* Navigation */}
       <nav className="bg-white shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
             <FileText className="w-8 h-8 text-blue-600" />
             <span className="text-2xl font-bold text-gray-900">DigitalClerk</span>
           </div>
           <div className="hidden md:flex items-center gap-8">
-            <a href="#features" className="text-gray-600 hover:text-blue-600">Features</a>
-            <a href="#how-it-works" className="text-gray-600 hover:text-blue-600">How It Works</a>
-            <a href="#pricing" className="text-gray-600 hover:text-blue-600">Pricing</a>
-            <button className="text-blue-600 hover:text-blue-700 font-semibold">Login</button>
-            <button className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition">
+            <a href="#features" onClick={(e) => { e.preventDefault(); scrollToSection('features'); }} className="text-gray-600 hover:text-blue-600 cursor-pointer">Features</a>
+            <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollToSection('how-it-works'); }} className="text-gray-600 hover:text-blue-600 cursor-pointer">How It Works</a>
+            <a href="#pricing" onClick={(e) => { e.preventDefault(); scrollToSection('pricing'); }} className="text-gray-600 hover:text-blue-600 cursor-pointer">Pricing</a>
+            <button onClick={handleLogin} className="text-blue-600 hover:text-blue-700 font-semibold">Login</button>
+            <button onClick={handleStartTrial} className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition">
               Start Free Trial
             </button>
           </div>
@@ -86,11 +120,11 @@ export default function Homepage() {
                 Upload any document, and our AI instantly extracts data to auto-fill any form. Built for CA firms, businesses, and professionals in India.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 mb-8">
-                <button className="bg-blue-600 text-white px-8 py-4 rounded-lg hover:bg-blue-700 transition text-lg font-semibold flex items-center justify-center gap-2">
+                <button onClick={handleDownloadExtension} className="bg-blue-600 text-white px-8 py-4 rounded-lg hover:bg-blue-700 transition text-lg font-semibold flex items-center justify-center gap-2">
                   <Chrome className="w-6 h-6" />
                   Download Chrome Extension
                 </button>
-                <button className="border-2 border-blue-600 text-blue-600 px-8 py-4 rounded-lg hover:bg-blue-50 transition text-lg font-semibold">
+                <button onClick={handleWatchDemo} className="border-2 border-blue-600 text-blue-600 px-8 py-4 rounded-lg hover:bg-blue-50 transition text-lg font-semibold">
                   Watch Demo
                 </button>
               </div>
@@ -182,7 +216,7 @@ export default function Homepage() {
       </section>
 
       {/* Use Cases Section */}
-      <section className="py-20 px-4">
+      <section id="pricing" className="py-20 px-4">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-4xl font-bold text-gray-900 mb-4">Works with Every Indian Form</h2>
@@ -204,10 +238,10 @@ export default function Homepage() {
           <h2 className="text-4xl font-bold mb-4">Ready to Save 25+ Hours Every Week?</h2>
           <p className="text-xl text-blue-100 mb-8">Join thousands of CA firms and businesses already using DigitalClerk</p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="bg-white text-blue-600 px-8 py-4 rounded-lg hover:bg-gray-100 transition text-lg font-semibold">
+            <button onClick={handleStartTrial} className="bg-white text-blue-600 px-8 py-4 rounded-lg hover:bg-gray-100 transition text-lg font-semibold">
               Start Free Trial
             </button>
-            <button className="border-2 border-white text-white px-8 py-4 rounded-lg hover:bg-white/10 transition text-lg font-semibold">
+            <button onClick={handleBookDemo} className="border-2 border-white text-white px-8 py-4 rounded-lg hover:bg-white/10 transition text-lg font-semibold">
               Book a Demo
             </button>
           </div>
@@ -224,28 +258,28 @@ export default function Homepage() {
           <div>
             <h4 className="text-white font-semibold mb-4">Product</h4>
             <ul className="space-y-2 text-sm">
-              <li>Features</li>
-              <li>Pricing</li>
-              <li>Chrome Extension</li>
-              <li>API</li>
+              <li><a href="#features" className="hover:text-white cursor-pointer">Features</a></li>
+              <li><a href="/pricing" className="hover:text-white cursor-pointer">Pricing</a></li>
+              <li><a href="#" onClick={handleDownloadExtension} className="hover:text-white cursor-pointer">Chrome Extension</a></li>
+              <li><a href="#" className="hover:text-white cursor-pointer">API</a></li>
             </ul>
           </div>
           <div>
             <h4 className="text-white font-semibold mb-4">Company</h4>
             <ul className="space-y-2 text-sm">
-              <li>About Us</li>
-              <li>Contact</li>
-              <li>Privacy Policy</li>
-              <li>Terms of Service</li>
+              <li><a href="#" className="hover:text-white cursor-pointer">About Us</a></li>
+              <li><a href="mailto:support@digitalclerk.app" className="hover:text-white cursor-pointer">Contact</a></li>
+              <li><a href="#" className="hover:text-white cursor-pointer">Privacy Policy</a></li>
+              <li><a href="#" className="hover:text-white cursor-pointer">Terms of Service</a></li>
             </ul>
           </div>
           <div>
             <h4 className="text-white font-semibold mb-4">Support</h4>
             <ul className="space-y-2 text-sm">
-              <li>Help Center</li>
-              <li>Documentation</li>
-              <li>Email: support@digitalclerk.app</li>
-              <li>Phone: +91 98765 43210</li>
+              <li><a href="#" className="hover:text-white cursor-pointer">Help Center</a></li>
+              <li><a href="#" className="hover:text-white cursor-pointer">Documentation</a></li>
+              <li><a href="mailto:support@digitalclerk.app" className="hover:text-white cursor-pointer">support@digitalclerk.app</a></li>
+              <li><a href="tel:+919876543210" className="hover:text-white cursor-pointer">+91 98765 43210</a></li>
             </ul>
           </div>
         </div>
