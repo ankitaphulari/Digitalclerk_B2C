@@ -20,7 +20,7 @@ export default function Login() {
     console.log('Login attempt:', { email, password });
     
     // Redirect to dashboard on success
-    // window.location.href = '/dashboard';
+     window.location.href = '/dashboard';
   };
 
   return (
